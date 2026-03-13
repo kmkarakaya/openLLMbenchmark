@@ -1,0 +1,5 @@
+streamlit>=1.41
+ollama>=0.4.7
+rapidfuzz>=3.10.0
+pandas>=2.2.0
+pytest>=8.3.0

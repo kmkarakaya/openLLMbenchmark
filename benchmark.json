@@ -1,0 +1,186 @@
+[
+  {
+    "question": "Sergi, sevgi, sevinç, seyir, semiz, sebze\nBu sözcüklerin sözlükteki sıralaması\naşağıdakilerden hangisinde doğru verilmiştir?\n·          A) Sevinç, sebze, seyir, sergi, sevgi,  semiz,\n·          B) Sebze, semiz, sergi, sevgi, sevinç, seyir\n·          C) Semiz, sevgi, sevinç, sebze, sergi, seyir\n·          D) Sebze, semiz, sergi, sevinç, seyir",
+    "expected_answer": "B",
+    "topic": "Türkçe",
+    "hardness_level": "Kolay",
+    "why_prepared": "Kelime dağarcığını ve Türkçe sözlükte alfabetik sıralama kuralını uygulayabilme becerisini geliştirmek/ölçmek.",
+    "id": "q001"
+  },
+  {
+    "question": "Aşağıdakilerden\nhangisi diğerlerinden farklı bir kavram alanına girmektedir?\n·          A) Taksi\n·          B) Otobüs\n·          C) Gemi\n·          D) Kamyon",
+    "expected_answer": "C",
+    "topic": "Türkçe",
+    "hardness_level": "Kolay",
+    "why_prepared": "Kavramlar arası anlamsal ilişki kurma ve gruplandırma (kara vs deniz taşıtları) becerisini test etmek.",
+    "id": "q002"
+  },
+  {
+    "question": "•    Oyuncunun\nyaptığı tayming hatası\ngol yememize neden oldu.\n\n•    İşe alacağınız kişiler için kriteriniz var\nmı?\n\n•    İmitasyon ürünler\nhiç kaliteli olmuyor.\nAşağıdakilerden\nhangisi yukarıdaki cümlelerdeki Türkçeye yabancı dillerden girmiş sözcüklerden\nbirinin Türkçesi değildir?\n·          A) Taklit\n·          B) Zamanlama\n·          C) Özensiz\n·          D) Ölçüt",
+    "expected_answer": "C",
+    "topic": "Türkçe",
+    "hardness_level": "Kolay",
+    "why_prepared": "Yabancı kökenli kelimelerin Türkçe karşılıklarını bilme ve metin içinde eşleştirme becerisini ölçmek.",
+    "id": "q003"
+  },
+  {
+    "question": "Aşağıdaki\nparagrafı bir cümle ile özetle: \nSonra,\ngünlerce hayatın akışına kapıldı. Önemsiz gördüğü olayları tekrar yaşadı.\nSelim’i düşünmeden günler geçti. Yatakta karısının sıcaklığıyla, gecelerce\nuyudu. Yıkandı… tıraş oldu… tekrar kirlendi. Yeni bir paket jilet aldı. Evde\nbirkaç kere ‘umumi temizlik’ yapıldı. Dostlarıyla geceler yaşadı: Selim’in\ntanımadığı dostlarla, aile ve iş çevresinin arkadaşlarıyla. Birbirlerine\nbenzeyen günler, yaşarken nasıl geçtiği anlaşılmayan günler, tarih düşürülmesi\nimkânsız günler… Günler birbirini kovaladı. Pazartesi oldu, sonra pazar, sonra\ngene pazartesi. Sonra gene pazar oldu. Geç kalkıldı. Kahvaltı, büyük kahvaltı,\ngeç yapıldı. Pazar gazeteleri okundu, bilmeceler çözüldü: geçen hafla çözülen\naynı bilmeceler. Evde yemek verildi, başka evlere yemeğe gidildi. \n(Oğuz\nAtay-Tutunamayanlar)",
+    "expected_answer": "Kahraman, Selim'i unutup sıradan, tekdüze ve rutin bir hayata geri dönmüştür.",
+    "topic": "Türkçe",
+    "hardness_level": "Orta",
+    "why_prepared": "Okuduğunu anlama, metnin ana düşüncesini kavrama ve bir bütün olarak özetleyebilme becerisini test etmek.",
+    "id": "q004"
+  },
+  {
+    "question": "\"Yoğun iş temposu nedeniyle oldukça yorgun düşen\nmühendis, nihayet evine döndüğünde huzur buldu ve rahat bir uyku çekti.\"\nSoru: Bu\ncümlede \"huzur buldu\" ifadesinin eş anlamlısı aşağıdakilerden\nhangisidir? \na) Huzura çıktı b) Rahatladı c) Dinlendi d) Ferahladı",
+    "expected_answer": "b",
+    "topic": "Türkçe",
+    "hardness_level": "Kolay",
+    "why_prepared": "Cümle içindeki söz öbeklerinin bağlamsal eş anlamlısını bulma becerisini ölçmek.",
+    "id": "q005"
+  },
+  {
+    "question": "Ayşe: Merhaba Ali, bu hafta sonu ne\nyapalım?\nAli: Merhaba Ayşe, düşünüyorum da,\nbelki şehir dışına bir gezi yapabiliriz. Sence nasıl olur?\nAyşe: Fikir güzel, ama hava\nsıcaklığı hakkında endişeliyim. Sahil kenarında bir gün geçirsek daha iyi\nolabilir mi?\nAli: Haklısın, sahilde serin bir\nrüzgar eser. Tamam o zaman, hangi gün uygundur sence?\nAyşe: Cumartesi günü müsait\nolabilirim. Senin için nasıl olur?\nAli: Cumartesi benim için de uygun.\nPeki, hangi saate buluşalım?\nAyşe: Öğleden sonra dört gibi\nbuluşabiliriz. Plajın girişinde mi buluşalım?\nAli: Tamam, plajın girişinde\nbuluşalım o zaman. Şezlong ve şemsiye getireceğiz mi?\nAyşe: Evet, iyi fikir. Birlikte\ngetirebiliriz.\nAli: O zaman cumartesi öğleden\nsonra dörtte plajda buluşalım. Birlikte güzel bir gün geçireceğiz!\nAyşe: Süper, görüşürüz o zaman!\n\n\nSoru: Ayşe ve Ali hafta sonu ne\nyapmamak üzere karar verdiler?",
+    "expected_answer": "Şehir dışına bir gezi yapmamak üzere karar verdiler.",
+    "topic": "Türkçe",
+    "hardness_level": "Kolay",
+    "why_prepared": "Diyalog metninden çıkarım yapma ve detayları doğru hatırlama/ayıklama becerisini test etmek.",
+    "id": "q006"
+  },
+  {
+    "question": "Bir otobüs hareket noktasından kalkıp giderken ilk\naltı durakta şu olaylar oluyor:\n\n durak: 8 kişi biniyor.\n\n durak: 6 kişi biniyor, 3\n     kişi iniyor.\n\n durak: 5 kişi biniyor, 4\n     kişi iniyor.\n\n durak: 7 kişi iniyor. \n\n durak: 6 kişi biniyor, 5\n     kişi iniyor.\n\n durak: 9 kişi iniyor.\nBu bilgilere göre ilk hareket noktasından kalkan\notobüsün içinde kaç kişi olursa 4. duraktan sonra otobüste 26 kişi olur?\nA) 15 B) 16 C) 18 D) 21 E) 24",
+    "expected_answer": "D",
+    "topic": "Mantık",
+    "hardness_level": "Orta",
+    "why_prepared": "Basit matematiksel denklemler kurarak mantık yürütme ve problem çözme becerisini ölçmek.",
+    "id": "q007"
+  },
+  {
+    "question": "Güneşte 3 gömlek 45 dakikada kuruyorsa aynı\ngüneşte 6 gömlek kaç dakikada kurur?",
+    "expected_answer": "45 dakika",
+    "topic": "Mantık",
+    "hardness_level": "Kolay",
+    "why_prepared": "Matematiksel yanılsamalara (doğru orantı tuzağına) düşmeden günlük hayat mantığını kullanma becerisini test etmek.",
+    "id": "q008"
+  },
+  {
+    "question": "Manavdan 10 tane limon aldım. Yolda Ahmet ile\nkarşılaştım. Ona 1 elma kardeşine de yarım elma verdim. Ayrıca, elmalardan\nbirsi çürük olduğunu görünce onu da çöpe attım. Eve gelince anneme de yarım\nelma verip kendim de 1 elma yedim. Torbada kaç elma kaldı?",
+    "expected_answer": "0 (Çünkü manavdan limon alındı, elma alınmadı.)",
+    "topic": "Mantık",
+    "hardness_level": "Kolay",
+    "why_prepared": "Dikkat dağınıklığını önleme ve metin içindeki temel çelişkiyi (limon-elma) fark etme becerisini ölçmek.",
+    "id": "q009"
+  },
+  {
+    "question": "Bir yarışmada ikinciyi geçen kaçıncı olur?",
+    "expected_answer": "İkinci",
+    "topic": "Mantık",
+    "hardness_level": "Kolay",
+    "why_prepared": "Klişe şaşırtmacalara karşı anlık odaklanma ve mantıksal doğrulama becerisini test etmek.",
+    "id": "q010"
+  },
+  {
+    "question": "Mustafa Kemal’in Amasya Genelgesi ile ulaşmak istediği öncelikli amaçları arasında,\nI. Türk halkını bağımsızlık mücadelesi etrafında toplama, \nII. İstanbul Hükümetinin TBMM’ye karşı çıkardığı ayaklanmaları\nbastırma, \nIII. Kuvayi Milliye birliklerini birleştirerek düzenli ordu\nkurma\ndurumlarından hangileri bulunmaktadır?\nA) Yalnız I\nB) Yalnız II\nC) Yalnız III\nD) I ve II\nE) I, II ve III",
+    "expected_answer": "A",
+    "topic": "Tarih",
+    "hardness_level": "Orta",
+    "why_prepared": "İnkılap tarihi kronolojisini bilme ve olaylar arası neden-sonuç ilişkisini doğru kurabilme.",
+    "id": "q011"
+  },
+  {
+    "question": "Aşağıdakilerden hangisi iklim koşullarının tarımsal üretim\nüzerindeki etkisine bir örnek olamaz?\nA) İç Anadolu'da buğday üretiminin yıllara göre değişmesi\nB) Güneydoğu Anadolu'da tarımsal sulamaya duyulan ihtiyacın\nfazla olması\nC) Doğu Karadeniz Bölümü'nde tarımda makine kullanımının az\nolması\nD) Doğu Karadeniz'de yetişen çayın Batı Karadeniz'de\nyetişmemesi\nE) Akdeniz Bölgesi'nde seracılık faaliyetlerinin fazla olması",
+    "expected_answer": "C",
+    "topic": "Coğrafya",
+    "hardness_level": "Orta",
+    "why_prepared": "İklim ve yer şekilleri faktörlerinin tarım üzerindeki farklı etkilerini birbirinden ayırma becerisini ölçmek.",
+    "id": "q012"
+  },
+  {
+    "question": "Nasrettin Hoca neden göle maya çalmıştır?",
+    "expected_answer": "Ya tutarsa diye",
+    "topic": "Genel Kültür",
+    "hardness_level": "Kolay",
+    "why_prepared": "Toplumsal mizah ve kültürel miras figürlerinin bilinirliğini ölçmek.",
+    "id": "q013"
+  },
+  {
+    "question": "Keloğlan neden keldir?",
+    "expected_answer": "Saçı olmadığı için / Doğuştan kel olarak tasvir edilen bir masal kahramanı olduğu için.",
+    "topic": "Genel Kültür",
+    "hardness_level": "Kolay",
+    "why_prepared": "Kültürel masal karakterlerine hakimiyeti ölçmek.",
+    "id": "q014"
+  },
+  {
+    "question": "Türkiye de toplam kaç il vardır?",
+    "expected_answer": "81",
+    "topic": "Genel Kültür",
+    "hardness_level": "Kolay",
+    "why_prepared": "Temel yurttaşlık ve güncel genel kültür bilgisini test etmek.",
+    "id": "q015"
+  },
+  {
+    "question": "Türkiye de Sarı kanarya denince akla ne gelir?",
+    "expected_answer": "Fenerbahçe",
+    "topic": "Genel Kültür",
+    "hardness_level": "Kolay",
+    "why_prepared": "Popüler kültür ve spor camiasına ait simgelerin bilinirliğini ölçmek.",
+    "id": "q016"
+  },
+  {
+    "question": "Bir şirket, 2023 yılının ilk çeyreğinde 5 milyon\nTL ciro elde etti. İkinci çeyrekte ciro %20 oranında artarak 6 milyon TL'ye\nulaştı. Üçüncü çeyrekte ise ciro, ikinci çeyreğe göre %10 oranında düştü.\nŞirket, dördüncü çeyrekte ise üçüncü çeyrekteki ciro miktarını %25 artırmayı\nbaşardı. Bu dönemde, şirketin giderleri her çeyrek için sırasıyla 3 milyon TL,\n4 milyon TL, 3.5 milyon TL ve 3.8 milyon TL olarak gerçekleşti. \nSoru:\nŞirketin 2023 yılı dördüncü çeyrekteki net kârı\nkaç milyon TL'dir?",
+    "expected_answer": "Cevap\nAnahtarı: 2.95 milyon TL\nŞirketin net kârı, cirodan giderlerin\nçıkarılmasıyla hesaplanır.\n \n1.      İlk çeyrek ciro: 5 milyon TL\n2.      İkinci çeyrek ciro: 6 milyon TL\n3.      Üçüncü çeyrek ciro:\no  İkinci çeyreğe göre %10 düştü:\no  6 milyon TL * 0.9 = 5.4 milyon\nTL\n4.      Dördüncü çeyrek ciro:\no  Üçüncü çeyreğe göre %25 arttı:\no  5.4 milyon TL * 1.25 = 6.75\nmilyon TL\nDördüncü çeyrek gideri: 3.8 milyon TL\nNet kâr hesaplaması:\n\n\n Dördüncü çeyrek ciro: 6.75 milyon TL\n\n Dördüncü çeyrek gider: 3.8 milyon TL\n\n Net kâr: 6.75 milyon TL - 3.8 milyon TL = 2.95 milyon TL",
+    "topic": "FİNANS",
+    "hardness_level": "Orta",
+    "why_prepared": "Yüzdelik hesaplamalar üzerinden ciro ve gider farkını bularak net kâr hesaplayabilme becerisi.",
+    "id": "q017"
+  },
+  {
+    "question": "Bir şirket, 2023 yılının ilk çeyreğinde 5 milyon TL ciro elde\netti. İkinci çeyrekte ciro %20 oranında artarak 6 milyon TL'ye ulaştı. Üçüncü\nçeyrekte ise ciro, ikinci çeyreğe göre %10 oranında düştü. Şirket, dördüncü\nçeyrekte ise üçüncü çeyrekteki ciro miktarını %25 artırmayı başardı. Şirketin\ngiderleri her çeyrek için sırasıyla 3 milyon TL, 4 milyon TL, 3.5 milyon TL ve\n3.8 milyon TL olarak gerçekleşti. Ayrıca, şirketin yıllık amortisman gideri 1.2\nmilyon TL olup bu tutar her çeyrek için eşit olarak dağıtılmıştır. Şirket, her\nçeyrekte cirosunun %5'i kadar vergi ödemektedir.\nSoru: Şirketin 2023 yılı dördüncü çeyrekteki net kârı kaç\nmilyon TL'dir?",
+    "expected_answer": "Cevap Anahtarı: 2.3125 Milyon TL\n1.      Ciro\nHesaplamaları:\no  İlk Çeyrek: 5 milyon TL\no  İkinci Çeyrek: 5 milyon TL * 1.20 = 6 milyon TL\no  Üçüncü Çeyrek: 6 milyon TL * 0.90 = 5.4 milyon TL\no  Dördüncü\nÇeyrek: 5.4 milyon TL * 1.25 = 6.75 milyon TL\n2.      Giderler:\no  İlk Çeyrek: 3 milyon TL\no  İkinci Çeyrek: 4 milyon TL\no  Üçüncü Çeyrek: 3.5 milyon TL\no  Dördüncü\nÇeyrek: 3.8 milyon TL\n3.      Amortisman\nGideri:\no  Yıllık amortisman gideri 1.2\nmilyon TL olduğu için her çeyrek için amortisman gideri: 1.2 milyon TL / 4 =\n0.3 milyon TL\n4.      Vergi Ödemesi:\no  Vergi ödemesi her çeyrek için\ncironun %5'i kadardır.\n§  Dördüncü Çeyrek Cirosu: 6.75 milyon\nTL\n§  Dördüncü Çeyrek Vergi: 6.75 milyon\nTL * 0.05 = 0.3375 milyon TL\n5.      Dördüncü\nÇeyrek Net Kârı Hesaplama:\no  Dördüncü\nÇeyrek Ciro: 6.75 milyon TL\no  Dördüncü\nÇeyrek Giderleri: 3.8 milyon TL\no  Dördüncü\nÇeyrek Amortisman Gideri: 0.3 milyon TL\no  Dördüncü\nÇeyrek Vergi: 0.3375 milyon TL\nDördüncü\nçeyrek net kârı şu şekilde hesaplanır:\nNet Kâr = Ciro\n- Giderler - Amortisman Gideri - Vergi = 6.75 milyon TL - 3.8 milyon TL - 0.3\nmilyon TL - 0.3375 milyon TL = 6.75 milyon TL - 4.4375 milyon TL = 2.3125\nmilyon TL\nSonuç olarak, şirketin 2023 yılı dördüncü\nçeyrekteki net kârı 2.3125 milyon TL'dir.",
+    "topic": "FİNANS",
+    "hardness_level": "Zor",
+    "why_prepared": "Amortisman ve vergi gibi ek finansal parametreleri hesaba katarak karmaşık net kâr hesaplaması yapabilme.",
+    "id": "q018"
+  },
+  {
+    "question": "Aşağıda verilen kullanıcı gereksinimlerine\ngöre tek bir HTML dosyası içine gereken tüm kodu yaz:\nÇekiliş Yapma\nWeb Sayfası\nFonksiyonel Gereksinimler:\n\n\n Kullanıcı, \"Çekiliş Yap\" butonuna basarak bir ile doksan\n     arasında altı farklı rastgele rakamın üretilmesini sağlamalı.\n\n Her çekiliş sonucu, çekiliş numarası ile birlikte sayfanın altına\n     yazılmalı (örnek: \"1. Çekiliş: 12, 34, 45, 56, 67, 78\").\n\n Kullanıcı, \"Çekilişi Bitir\" butonuna basarak yapılan tüm\n     çekilişlerde seçilen sayıların toplam frekansını görebilmeli.\n\n Frekanslar gösterildikten sonra yeni bir buton ortaya çıkmalı ve\n     \"İndir\" ismi olmalı.\n\n \"İndir\" butonuna basınca tüm çekilişler ve her çekilişteki\n     sayılar JSON formatında indirilebilmeli.\nArayüz Gereksinimleri:\n\n\n Sayfada \"Çekiliş Yap\" ve \"Çekilişi Bitir\" olmak\n     üzere iki buton bulunmalı.\n\n Her çekiliş sonucu, butonların altında ayrı ayrı alt alta\n     gösterilmeli.\n\n Çekilişi bitirince, yapılan çekilişlerde seçilmiş olan her bir sayı\n     için frekans raporu gösterilmeli.\n\n Frekans raporu gösterildikten sonra \"İndir\" butonu görünür\n     hale gelmeli.\nTeknik Gereksinimler:\n\n\n HTML5 ve CSS3 kullanılmalı.\n\n JavaScript ile rastgele sayı üretimi ve frekans hesaplama yapılmalı.\n\n JSON verisi oluşturma ve indirme işlevi JavaScript ile\n     gerçekleştirilmelidir.\n\n Sayfa responsive olmalı ve tüm cihazlarda düzgün görüntülenmeli.\nPerformans Gereksinimleri:\n\n\n Çekiliş sonuçlarının görüntülenmesi anında olmalı.\n\n Çekilişi bitirme işlemi frekans hesaplama ve rapor gösterimi anında\n     yapılmalı.\n\n JSON dosyasının oluşturulması ve indirilmesi hızlı ve kullanıcıyı\n     bekletmeyecek şekilde gerçekleştirilmelidir.\nJSON Formatı\nJSON dosyasının formatı aşağıdaki gibi olacaktır:\njson\nKodu kopyala\n{\n    \"cekilisler\": [\n        {\n            \"cekilisNo\": 1,\n            \"sayilar\": [12,\n34, 45, 56, 67, 78]\n        },\n        {\n            \"cekilisNo\": 2,\n            \"sayilar\": [11,\n22, 33, 44, 55, 66]\n        },\n        ...\n    ]\n}",
+    "expected_answer": "Kullanıcıya özel oluşturulacak tek dosyalık HTML, CSS ve JS bloğu.",
+    "topic": "KODLAMA",
+    "hardness_level": "Zor",
+    "why_prepared": "Algoritma tasarlama, DOM manipülasyonu, olay dinleme (event handling) ve JSON/veri indirme işlemlerini pratik koda dökme becerisi.",
+    "id": "q019"
+  },
+  {
+    "question": "Aşağıdaki yemek tarifi için verilen malzeme\nlistesine göre kullanılacak toplam tuz miktarı nedir? \nPilavlı Patlıcan Kapama Tarifi İçin\nMalzemeler\n\n\n 3 yemek kaşığı sıvı yağ\n\n 250 gram kuzu\n     kuşbaşı eti\n\n 1 adet soğan (yemeklik\n     doğranmış)\n\n 1 adet yeşil biber (doğranmış)\n\n 1 adet domates (büyük\n     boy, küp doğranmış)\n\n 1 çay\n     kaşığı tuz\n\n ½ çay kaşığı karabiber\n\n 1 su bardağı su\n\n 1 adet defne\n     yaprağı\n\n 1,5 yemek kaşığı sıvı yağ (pilav için)\n\n 1,5 yemek kaşığı tereyağı (pilav için)\n\n 2 su bardağı baldo pirinç (suda bekletilmiş)\n\n 3,5 su bardağı sıcak su\n\n 1,5\n     çay kaşığı tuz\n\n 4 adet patlıcan (dilimlenmiş,\n     kızartılmış)\n\n 1 avuç maydanoz (kıyılmış)",
+    "expected_answer": "2,5 çay kaşığı (1 çay kaşığı et sotesi için + 1,5 çay kaşığı pilav için)",
+    "topic": "HAFIZA",
+    "hardness_level": "Kolay",
+    "why_prepared": "Uzun ve karmaşık metinler içindeki spesifik detayı tarayarak bulma ve basit toplama yapma.",
+    "id": "q020"
+  },
+  {
+    "question": "Aşağıdaki yemek tarifi için verilen\nmalzemelerini 3 gruba ayır ve listele \nPilavlı Patlıcan Kapama Tarifi İçin\nMalzemeler\n\n\n 3 yemek kaşığı sıvı yağ\n\n 250 gram kuzu\n     kuşbaşı eti\n\n 1 adet soğan (yemeklik\n     doğranmış)\n\n 1 adet yeşil biber (doğranmış)\n\n 1 adet domates (büyük\n     boy, küp doğranmış)\n\n 1 çay kaşığı tuz\n\n ½ çay kaşığı karabiber\n\n 1 su bardağı su\n\n 1 adet defne\n     yaprağı\n\n 1,5 yemek kaşığı sıvı yağ (pilav için)\n\n 1,5 yemek kaşığı tereyağı (pilav için)\n\n 2 su bardağı baldo pirinç (suda bekletilmiş)\n\n 3,5 su bardağı sıcak su\n\n 1,5 çay kaşığı tuz\n\n 4 adet patlıcan (dilimlenmiş,\n     kızartılmış)\n\n 1 avuç maydanoz (kıyılmış)",
+    "expected_answer": "1. Et/Ana Ürünler: Kuzu kuşbaşı eti.\n2. Sebzeler/Otlar: Soğan, yeşil biber, domates, patlıcan, maydanoz.\n3. Yağ, Baharat ve Yardımcı Malzemeler: Sıvı yağ, tereyağı, tuz, karabiber, su, defne yaprağı, baldo pirinç.",
+    "topic": "HAFIZA",
+    "hardness_level": "Orta",
+    "why_prepared": "Karışık listelenen verileri anlamlı bir yapıya kavuşturarak kategorize edebilme becerisi.",
+    "id": "q021"
+  },
+  {
+    "question": "Aşağıdaki yemek tarifi için verilen\nmalzemelerden sebze olanlarını listele \nPilavlı Patlıcan Kapama Tarifi İçin\nMalzemeler\n\n\n 3 yemek kaşığı sıvı yağ\n\n 250 gram kuzu\n     kuşbaşı eti\n\n 1 adet soğan (yemeklik\n     doğranmış)\n\n 1 adet yeşil biber (doğranmış)\n\n 1 adet domates (büyük\n     boy, küp doğranmış)\n\n 1 çay kaşığı tuz\n\n ½ çay kaşığı karabiber\n\n 1 su bardağı su\n\n 1 adet defne\n     yaprağı\n\n 1,5 yemek kaşığı sıvı yağ (pilav için)\n\n 1,5 yemek kaşığı tereyağı (pilav için)\n\n 2 su bardağı baldo pirinç (suda bekletilmiş)\n\n 3,5 su bardağı sıcak su\n\n 1,5 çay kaşığı tuz\n\n 4 adet patlıcan (dilimlenmiş,\n     kızartılmış)\n\n 1 avuç maydanoz\n     (kıyılmış)",
+    "expected_answer": "Soğan, yeşil biber, domates, patlıcan, maydanoz.",
+    "topic": "HAFIZA",
+    "hardness_level": "Kolay",
+    "why_prepared": "Liste içinden belirli bir özelliğe/kategoriye sahip elemanları seçip ayıklayabilme.",
+    "id": "q022"
+  },
+  {
+    "question": "Aşağıdaki yemek tarifi için verilen\nmalzemelerden meyve olanlarını listele \nPilavlı Patlıcan Kapama Tarifi İçin\nMalzemeler\n\n\n 3 yemek kaşığı sıvı yağ\n\n 250 gram kuzu\n     kuşbaşı eti\n\n 1 adet soğan (yemeklik\n     doğranmış)\n\n 1 adet yeşil biber (doğranmış)\n\n 1 adet domates (büyük\n     boy, küp doğranmış)\n\n 1 çay kaşığı tuz\n\n ½ çay kaşığı karabiber\n\n 1 su bardağı su\n\n 1 adet defne\n     yaprağı\n\n 1,5 yemek kaşığı sıvı yağ (pilav için)\n\n 1,5 yemek kaşığı tereyağı (pilav için)\n\n 2 su bardağı baldo pirinç (suda bekletilmiş)\n\n 3,5 su bardağı sıcak su\n\n 1,5 çay kaşığı tuz\n\n 4 adet patlıcan (dilimlenmiş,\n     kızartılmış)\n\n 1 avuç maydanoz\n     (kıyılmış)",
+    "expected_answer": "Domates, yeşil biber, patlıcan (Biyolojik olarak çekirdekli oldukları için meyvedirler ancak mutfakta sebze olarak kabul edilirler. Liste bağlamında meyve bulunmadığı da doğru kabul edilebilir).",
+    "topic": "HAFIZA",
+    "hardness_level": "Zor",
+    "why_prepared": "Temel genel kültür bilgisi ile (meyve-sebze ayrımı) liste tarama işlevini birleştirerek dikkat ölçme.",
+    "id": "q023"
+  }
+]
