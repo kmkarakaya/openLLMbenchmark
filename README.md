@@ -2,6 +2,18 @@
 
 Real-time Streamlit app for quickly evaluating open-source LLMs on Ollama Cloud with a simple Turkish Q/A benchmark.
 
+## Live App
+
+You can access the online running version here:
+
+https://turkishbench.streamlit.app/
+
+## Source Code
+
+GitHub repository:
+
+https://github.com/kmkarakaya/TurkishBenchmark
+
 ## Overview
 
 - This app uses a simple Turkish question-answer set to provide a fast baseline evaluation for Ollama Cloud models.
@@ -10,7 +22,16 @@ Real-time Streamlit app for quickly evaluating open-source LLMs on Ollama Cloud 
 
 ## Contributing Questions
 
-To update existing questions or add new ones, please open a Pull Request on GitHub by editing `data/benchmark.json`. Follow the existing JSON structure, fill all fields correctly, and assign a new unique `id` in `qNNN` format (use the next available number, do not renumber existing IDs).
+To update existing questions or add new ones, open a Pull Request on GitHub by editing `data/benchmark.json`.
+If preferred, users can also add their own questions directly to [benchmark.json](data/benchmark.json) by following the example format.
+
+Rules:
+
+- Follow the existing JSON structure.
+- Fill in all fields correctly.
+- Assign a new unique `id` in `qNNN` format.
+- Use the next available number.
+- Do not renumber existing IDs.
 
 ## Quick Start
 
@@ -24,22 +45,28 @@ streamlit run app.py
 - `OLLAMA_API_KEY` (required)
 - `OLLAMA_HOST` (optional, default: `https://ollama.com`)
 
+If `OLLAMA_API_KEY` is missing at startup, the app asks for it in the UI using a masked input.
+
 ## Dataset
 
-Source-of-truth dataset is:
+Source-of-truth dataset:
+
 - `data/benchmark.json`
 
-Each record must include:
-- `id` (immutable, format `qNNN`, e.g. `q001`)
+Required fields per question:
+
+- `id` (immutable, format `qNNN`, for example `q001`)
 - `question`
 - `expected_answer`
 
-Optional fields used in UI:
+Optional metadata fields:
+
 - `topic`
 - `hardness_level`
 - `why_prepared`
 
 Dataset loading, validation, and writes are handled by:
+
 - `data/benchmark.py`
 
 ## Runtime Outputs
@@ -51,37 +78,39 @@ Dataset loading, validation, and writes are handled by:
 
 Latest full report is in `results.md`. Current model comparison snapshot:
 
-| Model | Accuracy % | Success/Scored | Median (s) | Mean (s) | P95 (s) | Latency Score |
-|---|---:|---:|---:|---:|---:|---:|
-| qwen3.5:397b | 100.0 | 4/4 | 17.07 | 16.80 | 21.08 | 15.2 |
-| gemma3:12b | 87.5 | 7/8 | 2.60 | 3.62 | 7.77 | 100.0 |
-| gemma3:4b | 77.8 | 7/9 | 3.43 | 3.56 | 4.96 | 75.9 |
-| gemma3:27b | 66.7 | 2/3 | 6.80 | 7.60 | 10.48 | 38.2 |
+| Model        | Accuracy % | Success/Scored | Median (s) | Mean (s) | P95 (s) | Latency Score |
+| ------------ | ---------: | -------------: | ---------: | -------: | ------: | ------------: |
+| qwen3.5:397b |      100.0 |          23/23 |      13.18 |    15.01 |   37.47 |          24.1 |
+| gemma3:27b   |       82.6 |          19/23 |       6.02 |     6.50 |   10.77 |          52.8 |
+| gemma3:12b   |       69.6 |          16/23 |       3.18 |     4.46 |    6.60 |         100.0 |
+| gemma3:4b    |       34.8 |           8/23 |       3.43 |     4.14 |    9.38 |          92.8 |
 
 ## Question Distribution by Topic
 
-| Topic | Question Count | Share |
-|---|---:|---:|
-| Türkçe | 6 | 26.1% |
-| HAFIZA | 4 | 17.4% |
-| Genel Kültür | 4 | 17.4% |
-| Mantık | 4 | 17.4% |
-| FİNANS | 2 | 8.7% |
-| Coğrafya | 1 | 4.3% |
-| KODLAMA | 1 | 4.3% |
-| Tarih | 1 | 4.3% |
-| **Toplam** | **23** | **100%** |
+| Topic             | Question Count |          Share |
+| ----------------- | -------------: | -------------: |
+| Turkish           |              6 |          26.1% |
+| Memory            |              4 |          17.4% |
+| General Knowledge |              4 |          17.4% |
+| Logic             |              4 |          17.4% |
+| Finance           |              2 |           8.7% |
+| Geography         |              1 |           4.3% |
+| Coding            |              1 |           4.3% |
+| History           |              1 |           4.3% |
+| **Total**   |   **23** | **100%** |
 
 ## Current Behavior
 
-- App reads questions only from `data/benchmark.json` (no PDF/DOCX extraction path).
-- Expected answers are shown as read-only in the UI.
-- Main page title is: `Açık Kaynak Dil Modellerinin Türkçe Becerisini Kıyasla`.
-- Model responses stream in real time in the UI.
-- If a new question is opened and the selected model has no saved answer for that question, the app auto-starts the run.
-- Response panel supports two view modes: `Düz metin` and `Render (MD/HTML)`.
-- A `Kopyala` button is available next to the response header (disabled while generation is running or response is empty).
-- Result status is shown with chips (`Durum`, `Otomatik/Manuel Puanlandı`).
-- `Açıklama` chip is shown only for special cases (error/interrupted).
-- Results are auto-saved after each run/decision.
-- Default system prompt enforces Turkish answers.
+- Questions are loaded only from `data/benchmark.json`.
+- If `OLLAMA_API_KEY` is missing at startup, the app shows a masked input and blocks execution until a key is provided.
+- The selected model and active question are processed one-by-one with live streaming output.
+- If you move to a question that has no saved record for the selected model, the app auto-starts that run.
+- The expected answer is displayed as read-only.
+- The response area supports two modes: `Duz metin` and `Render (MD/HTML)`.
+- If the selected model has no saved record for the current question, the response box is shown empty.
+- `Kopyala` is available next to the response header and is disabled while generation is running or when there is no text to copy.
+- `Durdur` sends a stop request; interrupted runs are saved as `manual_review`.
+- Automatic scoring is applied on completed runs, and manual override buttons (`Basarili`, `Basarisiz`, `Inceleme`) can update the saved result.
+- Status chips show `Durum` and scoring type (`Otomatik Puanlandi` or `Manuel Puanlandi`); the reason chip appears only for special cases (error/interrupted).
+- Every run/decision is saved to `data/results.json` and `results.md` is regenerated automatically.
+- The default system prompt enforces Turkish-only answers.
