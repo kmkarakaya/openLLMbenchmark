@@ -7,7 +7,9 @@ from typing import Any
 
 
 ID_PATTERN = re.compile(r"^q\d{3,}$")
-DEFAULT_SYSTEM_PROMPT = "Sen Türkçe konuşan bir botsun. Tüm yanıtlarını yalnızca Türkçe ver."
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a helpful assistant. Answer in the same language as the user's question unless explicitly asked otherwise."
+)
 
 
 class DatasetValidationError(ValueError):

@@ -19,6 +19,17 @@ from data.benchmark import (
     load_benchmark_payload,
 )
 from engine import get_client, list_models
+from mode_selection import (
+    MODE_PAIR,
+    MODE_SINGLE,
+    derive_initial_mode,
+    is_run_eligible,
+    normalize_selected_models as normalize_models,
+    resolve_active_models,
+    resolve_second_model_value,
+    sanitize_mode,
+    update_pair_model_backup,
+)
 from runner import get_runner
 from scoring import evaluate_response
 from storage import (
@@ -36,11 +47,12 @@ DATA_DIR = ROOT / "data"
 BENCHMARK_PATH = DATA_DIR / "benchmark.json"
 RESULTS_PATH = DATA_DIR / "results.json"
 RESULTS_MD_PATH = ROOT / "results.md"
+RESPONSE_VIEW_OPTIONS = ["Düz metin", "Render (MD/HTML)"]
 
 
 def init_page() -> None:
     st.set_page_config(
-        page_title="Açık Kaynak Dil Modellerinin Türkçe Becerisini Kıyasla",
+        page_title="Open LLM Benchmark",
         page_icon="📊",
         layout="wide",
     )
@@ -89,6 +101,38 @@ def init_page() -> None:
             font-weight: 800;
             letter-spacing: -0.02em;
             color: var(--ink);
+          }
+          .profile-pill-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.55rem;
+            margin: -0.2rem 0 1rem 0;
+          }
+          .profile-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid #c9d9ea;
+            background: #ffffff;
+            color: #0f3d5e !important;
+            font-weight: 650;
+            font-size: 0.9rem;
+            text-decoration: none !important;
+            box-shadow: 0 2px 8px rgba(15, 61, 94, 0.08);
+          }
+          .profile-pill:hover {
+            border-color: #1f6faa;
+            background: #f2f8ff;
+            color: #124a73 !important;
+            transform: translateY(-1px);
+          }
+          @media (max-width: 720px) {
+            .profile-pill {
+              font-size: 0.84rem;
+              padding: 0.32rem 0.62rem;
+            }
           }
           .bench-card {
             background: var(--card);
@@ -378,6 +422,22 @@ def init_state() -> None:
     if "selected_models" not in st.session_state:
         initial_model = str(st.session_state.selected_model or "").strip()
         st.session_state.selected_models = [initial_model] if initial_model else []
+    normalized_existing = normalize_models(
+        *st.session_state.selected_models,
+        st.session_state.selected_model,
+    )
+    st.session_state.selected_models = normalized_existing
+    st.session_state.selected_model = normalized_existing[0] if normalized_existing else ""
+    if "benchmark_mode" not in st.session_state:
+        st.session_state.benchmark_mode = derive_initial_mode(
+            selected_models=normalized_existing,
+            selected_model=st.session_state.selected_model,
+        )
+    else:
+        st.session_state.benchmark_mode = sanitize_mode(st.session_state.benchmark_mode)
+    if "pair_model_backup" not in st.session_state:
+        st.session_state.pair_model_backup = normalized_existing[1] if len(normalized_existing) > 1 else ""
+    st.session_state.pair_model_backup = str(st.session_state.pair_model_backup or "").strip()
     if "persisted_run_entry_keys" not in st.session_state:
         st.session_state.persisted_run_entry_keys = []
     if "runtime_api_key" not in st.session_state:
@@ -387,7 +447,16 @@ def init_state() -> None:
     if "system_prompt" not in st.session_state:
         st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
     if "response_view_mode_pref" not in st.session_state:
-        st.session_state.response_view_mode_pref = "Düz metin"
+        st.session_state.response_view_mode_pref = RESPONSE_VIEW_OPTIONS[0]
+    if "response_view_mode_widget" in st.session_state:
+        widget_mode = str(st.session_state.response_view_mode_widget or "").strip()
+        if widget_mode in RESPONSE_VIEW_OPTIONS:
+            st.session_state.response_view_mode_pref = widget_mode
+    if (
+        "response_view_mode_widget" not in st.session_state
+        or st.session_state.response_view_mode_widget not in RESPONSE_VIEW_OPTIONS
+    ):
+        st.session_state.response_view_mode_widget = st.session_state.response_view_mode_pref
     if "last_seen_question_id" not in st.session_state:
         st.session_state.last_seen_question_id = ""
     if "pending_autorun" not in st.session_state:
@@ -406,60 +475,95 @@ def refresh_models() -> list[str]:
 
 
 def normalize_selected_models(*values: str) -> list[str]:
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        model = str(value).strip()
-        if not model or model in seen:
-            continue
-        normalized.append(model)
-        seen.add(model)
-    return normalized[:2]
+    return normalize_models(*values)
 
 
-def pick_models(models: list[str]) -> list[str]:
+def pick_models(models: list[str]) -> tuple[list[str], bool]:
     options = [""] + models
     existing = normalize_selected_models(*st.session_state.selected_models, st.session_state.selected_model)
     selected_model_1 = existing[0] if existing else ""
-    selected_model_2 = existing[1] if len(existing) > 1 else ""
+    selected_model_2 = resolve_second_model_value(
+        selected_models=existing,
+        pair_model_backup=st.session_state.pair_model_backup,
+        model_1=selected_model_1,
+    )
+    benchmark_mode = sanitize_mode(st.session_state.benchmark_mode)
 
-    for model in existing:
+    for model in normalize_selected_models(*existing, st.session_state.pair_model_backup):
         if model and model not in options:
             options.append(model)
 
+    st.subheader("Kullanım Modu")
+    mode_labels = {
+        "Tek model": MODE_SINGLE,
+        "Karşılaştırma (2 model)": MODE_PAIR,
+    }
+    mode_options = list(mode_labels.keys())
+    selected_mode = st.radio(
+        "Kullanım modu",
+        options=mode_options,
+        index=0 if benchmark_mode == MODE_SINGLE else 1,
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    benchmark_mode = mode_labels[selected_mode]
+    st.session_state.benchmark_mode = benchmark_mode
+    if benchmark_mode == MODE_SINGLE:
+        st.caption("Bir modeli tek başına değerlendirir.")
+    else:
+        st.caption("Aynı soru için iki modeli yan yana test eder.")
+
+    st.markdown("---")
+    st.subheader("Model Seçimi")
     selected_1 = st.selectbox(
         "Ollama Cloud LLM 1 seç",
         options=options,
         index=options.index(selected_model_1) if selected_model_1 in options else 0,
-        help="Model listesinden seçebilir veya alttan model adını manuel girebilirsiniz.",
+        help="Model listesinden seçin veya model adını manuel girin.",
     )
     manual_1 = st.text_input("Model 1 adı (manuel)", value=selected_1 or selected_model_1)
     model_1 = manual_1.strip() or selected_1.strip()
 
-    second_options = [""] + [item for item in options[1:] if item != model_1]
-    if selected_model_2 and selected_model_2 not in second_options and selected_model_2 != model_1:
-        second_options.append(selected_model_2)
+    model_2 = selected_model_2
+    if benchmark_mode == MODE_PAIR:
+        second_options = [""] + [item for item in options[1:] if item != model_1]
+        if selected_model_2 and selected_model_2 not in second_options and selected_model_2 != model_1:
+            second_options.append(selected_model_2)
 
-    selected_2 = st.selectbox(
-        "Ollama Cloud LLM 2 seç (isteğe bağlı)",
-        options=second_options,
-        index=second_options.index(selected_model_2) if selected_model_2 in second_options else 0,
-        help="Karşılaştırma için ikinci bir model seçin. Boş bırakırsanız tek model çalışır.",
+        selected_2 = st.selectbox(
+            "Ollama Cloud LLM 2 seç",
+            options=second_options,
+            index=second_options.index(selected_model_2) if selected_model_2 in second_options else 0,
+            help="Karşılaştırma için ikinci model seçin veya model adını manuel girin.",
+        )
+        manual_2 = st.text_input(
+            "Model 2 adı (manuel)",
+            value=selected_2 or (selected_model_2 if selected_model_2 != model_1 else ""),
+        )
+        model_2 = manual_2.strip() or selected_2.strip()
+
+    active_models, duplicate_selection = resolve_active_models(
+        mode=benchmark_mode,
+        model_1=model_1,
+        model_2=model_2,
     )
-    manual_2 = st.text_input(
-        "Model 2 adı (manuel)",
-        value=selected_2 or (selected_model_2 if selected_model_2 != model_1 else ""),
+    st.session_state.pair_model_backup = update_pair_model_backup(
+        current_backup=st.session_state.pair_model_backup,
+        mode=benchmark_mode,
+        model_1=model_1,
+        model_2=model_2,
     )
-    model_2 = manual_2.strip() or selected_2.strip()
 
-    duplicate_selection = bool(model_1 and model_2 and model_2 == model_1)
-    selected_models = normalize_selected_models(model_1, model_2)
-    if duplicate_selection:
-        st.warning("Karşılaştırma için iki farklı model seçin.")
+    run_eligible = is_run_eligible(benchmark_mode, active_models)
+    if benchmark_mode == MODE_PAIR:
+        if duplicate_selection:
+            st.warning("Karşılaştırma için iki farklı model seçin.")
+        elif not model_2:
+            st.info("Karşılaştırma modu için ikinci model seçin veya girin.")
 
-    st.session_state.selected_models = selected_models
-    st.session_state.selected_model = selected_models[0] if selected_models else ""
-    return selected_models
+    st.session_state.selected_models = active_models
+    st.session_state.selected_model = active_models[0] if active_models else ""
+    return active_models, run_eligible
 
 
 def render_question_meta(question: dict[str, Any], selected_models: list[str]) -> None:
@@ -596,33 +700,39 @@ def is_full_html_document(response_text: str) -> bool:
 
 
 def render_response_content(response_text: str, view_mode: str, key: str) -> None:
+    value = str(response_text or "")
+    plain_widget_key = f"{key}_plain_text"
+    render_empty_widget_key = f"{key}_render_empty_text"
+
     if view_mode == "Düz metin":
+        if st.session_state.get(plain_widget_key) != value:
+            st.session_state[plain_widget_key] = value
         st.text_area(
             "Yanıt",
-            value=response_text,
             height=240,
             disabled=True,
             label_visibility="collapsed",
-            key=key,
+            key=plain_widget_key,
         )
         return
 
-    if not str(response_text).strip():
+    if not value.strip():
+        if render_empty_widget_key not in st.session_state:
+            st.session_state[render_empty_widget_key] = ""
         st.text_area(
             "Yanıt",
-            value="",
             height=240,
             disabled=True,
             label_visibility="collapsed",
-            key=key,
+            key=render_empty_widget_key,
         )
         return
 
-    if is_full_html_document(response_text):
-        components.html(response_text, height=420, scrolling=True)
+    if is_full_html_document(value):
+        components.html(value, height=420, scrolling=True)
         return
 
-    st.markdown(response_text, unsafe_allow_html=True)
+    st.markdown(value, unsafe_allow_html=True)
 
 
 def find_result(
@@ -778,6 +888,10 @@ def handle_completed_runs(
 def render_metrics_panel(results: list[dict[str, Any]]) -> None:
     metrics = compute_model_metrics(results)
     st.subheader("Model Karşılaştırma")
+    st.caption(
+        "Not: Süre metrikleri Ollama Cloud ağ/altyapı koşullarından etkilenebilir; "
+        "mutlak değerlerden çok modeller arası göreli karşılaştırma için yorumlanmalıdır."
+    )
     if not metrics:
         st.caption("Henüz sonuç yok.")
         return
@@ -785,7 +899,8 @@ def render_metrics_panel(results: list[dict[str, Any]]) -> None:
     frame = pd.DataFrame(
         {
             "Model Adı": [row["model"] for row in metrics],
-            "Doğruluk (%)": [round(row["accuracy_percent"], 1) for row in metrics],
+            "Başarım Puanı": [round(row["accuracy_percent"], 1) for row in metrics],
+            "Cevap Hızı Puanı": [round(row["latency_score"], 1) for row in metrics],
             "Başarılı/Puanlanan": [f"{row['success_count']}/{row['scored_count']}" for row in metrics],
             "Medyan (sn)": [
                 round((row["median_ms"] or 0.0) / 1000.0, 2) if row["median_ms"] else None
@@ -799,7 +914,6 @@ def render_metrics_panel(results: list[dict[str, Any]]) -> None:
                 round((row["p95_ms"] or 0.0) / 1000.0, 2) if row["p95_ms"] else None
                 for row in metrics
             ],
-            "Gecikme Puanı": [round(row["latency_score"], 1) for row in metrics],
         }
     )
     st.dataframe(
@@ -809,34 +923,34 @@ def render_metrics_panel(results: list[dict[str, Any]]) -> None:
         column_config={
             "Model Adı": st.column_config.TextColumn(
                 "Model Adı",
-                help="Değerlendirilen Ollama model adı.",
+                help="Değerlendirilen Ollama model adı. Bu sütunda büyük/küçük sayı kıyası yoktur.",
             ),
-            "Doğruluk (%)": st.column_config.NumberColumn(
-                "Doğruluk (%)",
-                help="(Başarılı cevap sayısı / puanlanan soru sayısı) x 100.",
+            "Başarım Puanı": st.column_config.NumberColumn(
+                "Başarım Puanı",
+                help="(Başarılı cevap sayısı / puanlanan soru sayısı) x 100. Büyük değer daha iyidir.",
                 format="%.1f",
             ),
             "Başarılı/Puanlanan": st.column_config.TextColumn(
                 "Başarılı/Puanlanan",
-                help="Başarılı cevap sayısı / puanlanan toplam soru sayısı.",
+                help="Başarılı cevap sayısı / puanlanan toplam soru sayısı. Bu sütunda büyük/küçük sayı kıyası yoktur.",
             ),
             "Medyan (sn)": st.column_config.NumberColumn(
                 "Medyan (sn)",
-                help="Yanıt sürelerinin medyanı (saniye). Düşük olması daha iyidir.",
+                help="Yanıt sürelerinin medyanı (saniye). Küçük değer daha iyidir.",
                 format="%.2f",
             ),
             "Ortalama (sn)": st.column_config.NumberColumn(
                 "Ortalama (sn)",
-                help="Yanıt sürelerinin ortalaması (saniye).",
+                help="Yanıt sürelerinin ortalaması (saniye). Küçük değer daha iyidir.",
                 format="%.2f",
             ),
             "P95 (sn)": st.column_config.NumberColumn(
                 "P95 (sn)",
-                help="%95 persentil yanıt süresi (saniye). Kuyruk gecikmeyi gösterir.",
+                help="%95 persentil yanıt süresi (saniye). Küçük değer daha iyidir.",
                 format="%.2f",
             ),
-            "Gecikme Puanı": st.column_config.NumberColumn(
-                "Gecikme Puanı",
+            "Cevap Hızı Puanı": st.column_config.NumberColumn(
+                "Cevap Hızı Puanı",
                 help="En hızlı modelin medyanına göre normalize edilmiş hız puanı (0-100). Büyük değer daha iyidir.",
                 format="%.1f",
             ),
@@ -870,7 +984,18 @@ def render() -> None:
     init_state()
 
     st.markdown(
-        '<div class="page-main-title">Açık Kaynak Dil Modellerinin Türkçe Becerisini Kıyasla</div>',
+        '<div class="page-main-title">Open LLM Benchmark</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+        <div class="profile-pill-wrap">
+          <a class="profile-pill" href="https://www.youtube.com/c/muratkarakayaakademi" target="_blank" rel="noopener noreferrer">YouTube</a>
+          <a class="profile-pill" href="https://www.muratkarakaya.net/" target="_blank" rel="noopener noreferrer">Blog</a>
+          <a class="profile-pill" href="https://github.com/kmkarakaya" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a class="profile-pill" href="https://www.linkedin.com/in/muratkarakaya/" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -906,6 +1031,7 @@ def render() -> None:
 
     with st.sidebar:
         st.header("Ayarlar")
+        st.subheader("Veri ve Sistem")
         api_ok = bool(os.getenv("OLLAMA_API_KEY", "").strip())
         st.write(f"API anahtarı durumu: {'✅ Hazır' if api_ok else '❌ Eksik'}")
         if st.button("Soru Setini Yenile", use_container_width=True):
@@ -943,7 +1069,7 @@ def render() -> None:
                 refresh_models()
             except Exception:
                 st.session_state.model_cache = []
-        selected_models = pick_models(st.session_state.model_cache)
+        active_models, run_eligible = pick_models(st.session_state.model_cache)
         st.caption(f"Toplam soru: {len(questions)}")
         st.caption(f"Test edilen model sayısı: {len({r.get('model') for r in results if r.get('model')})}")
         st.markdown("---")
@@ -959,9 +1085,11 @@ def render() -> None:
     if st.session_state.last_seen_question_id != question["id"]:
         st.session_state.last_seen_question_id = question["id"]
         st.session_state.pending_autorun = None
-        missing_models = [
-            model for model in selected_models if not find_result(results, question["id"], model)
-        ]
+        missing_models = []
+        if run_eligible:
+            missing_models = [
+                model for model in active_models if not find_result(results, question["id"], model)
+            ]
         if missing_models:
             st.session_state.pending_autorun = {
                 "question_id": question["id"],
@@ -990,7 +1118,7 @@ def render() -> None:
             st.session_state.question_index = min(len(questions) - 1, idx + 1)
             st.rerun()
 
-    render_question_meta(question=question, selected_models=selected_models)
+    render_question_meta(question=question, selected_models=active_models)
     st.text_area(
         "Soru metni",
         value=question["prompt"],
@@ -1009,15 +1137,16 @@ def render() -> None:
 
     run_col, stop_col = st.columns(2)
     with run_col:
+        start_label = "Yanıtları Başlat" if st.session_state.benchmark_mode == MODE_PAIR else "Yanıtı Başlat"
         if st.button(
-            "Yanıtları Başlat" if len(selected_models) > 1 else "Yanıtı Başlat",
+            start_label,
             type="primary",
             use_container_width=True,
-            disabled=not selected_models or snapshot["running"],
+            disabled=(not run_eligible) or snapshot["running"],
         ):
             st.session_state.persisted_run_entry_keys = []
             ok = runner.start(
-                models=selected_models,
+                models=active_models,
                 question_id=question["id"],
                 prompt=question["prompt"],
                 system_prompt=st.session_state.system_prompt,
@@ -1039,6 +1168,8 @@ def render() -> None:
         questions=questions,
         question_by_id=question_by_id,
     )
+    if not run_eligible:
+        st.session_state.pending_autorun = None
     pending_autorun = st.session_state.get("pending_autorun")
     if isinstance(pending_autorun, dict):
         pending_qid = str(pending_autorun.get("question_id", ""))
@@ -1063,25 +1194,35 @@ def render() -> None:
                     st.session_state.pending_autorun = None
                     st.rerun()
 
-    response_view_options = ["Düz metin", "Render (MD/HTML)"]
-    response_view_default_index = (
-        response_view_options.index(st.session_state.response_view_mode_pref)
-        if st.session_state.response_view_mode_pref in response_view_options
-        else 0
-    )
-    view_label_col, view_radio_col = st.columns([1, 4])
-    with view_label_col:
-        st.markdown('<div style="padding-top:0.45rem;font-weight:600;">Yanıt görünümü</div>', unsafe_allow_html=True)
-    with view_radio_col:
-        response_view_mode = st.radio(
-            "Yanıt görünümü",
-            options=response_view_options,
-            index=response_view_default_index,
-            horizontal=True,
-            label_visibility="collapsed",
+    panel_title = "Model Karşılaştırma Sonuçları" if st.session_state.benchmark_mode == MODE_PAIR else "Tek Model Sonucu"
+    response_view_options = RESPONSE_VIEW_OPTIONS
+    if st.session_state.response_view_mode_pref not in response_view_options:
+        st.session_state.response_view_mode_pref = response_view_options[0]
+    if (
+        "response_view_mode_widget" not in st.session_state
+        or st.session_state.response_view_mode_widget not in response_view_options
+    ):
+        st.session_state.response_view_mode_widget = st.session_state.response_view_mode_pref
+    header_pad_left, header_col, header_pad_right = st.columns([1, 3, 1])
+    with header_col:
+        st.markdown(
+            f'<h3 style="text-align:center; margin-bottom:0.35rem;">{panel_title}</h3>',
+            unsafe_allow_html=True,
         )
+        line_pad_left, line_col, line_pad_right = st.columns([1, 3, 1])
+        with line_col:
+            radio_pad_left, line_radio_col, radio_pad_right = st.columns([1, 2, 1])
+            with line_radio_col:
+                st.radio(
+                    "Yanıt görünümü",
+                    options=response_view_options,
+                    key="response_view_mode_widget",
+                    horizontal=True,
+                    label_visibility="collapsed",
+                )
+    response_view_mode = st.session_state.response_view_mode_widget
     st.session_state.response_view_mode_pref = response_view_mode
-    panel_models = selected_models or [""]
+    panel_models = active_models or [""]
     response_columns = st.columns(len(panel_models)) if len(panel_models) > 1 else [st.container()]
     for panel_index, model in enumerate(panel_models):
         with response_columns[panel_index]:
@@ -1127,13 +1268,20 @@ def render() -> None:
                     key=f"response_live_{question['id']}_{model}",
                 )
                 if not live_response.strip():
-                    st.warning("Yanıt henüz gelmedi veya boş döndü.")
+                    if active_entry.get("completed"):
+                        st.warning("Bu çalıştırmada model boş yanıt döndürdü. Tekrar çalıştırmayı deneyin.")
+                    else:
+                        st.warning("Yanıt henüz gelmedi veya boş döndü.")
                 if active_entry.get("error"):
                     st.error(str(active_entry["error"]))
                 elif active_entry.get("interrupted"):
                     st.warning("Çalışma kullanıcı tarafından durduruldu.")
-                if saved:
-                    render_result_meta(saved)
+                if saved and active_entry.get("completed"):
+                    saved_response = str(saved.get("response", ""))
+                    if saved_response == live_response:
+                        render_result_meta(saved)
+                elif saved and active_entry.get("running"):
+                    st.caption("Canlı çalışma sürüyor. Durum rozetleri çalışma tamamlandığında güncellenecek.")
             elif saved:
                 saved_response = str(saved.get("response", ""))
                 render_response_content(
@@ -1176,7 +1324,7 @@ def render() -> None:
                 updated["interrupted"] = False
                 updated["timestamp"] = datetime.now(timezone.utc).isoformat()
                 results = persist_result_record(results, questions, updated)
-                st.success("Manuel durum: Başarılı")
+                st.rerun()
             if c2.button(
                 "Başarısız",
                 use_container_width=True,
@@ -1191,7 +1339,7 @@ def render() -> None:
                 updated["interrupted"] = False
                 updated["timestamp"] = datetime.now(timezone.utc).isoformat()
                 results = persist_result_record(results, questions, updated)
-                st.warning("Manuel durum: Başarısız")
+                st.rerun()
             if c3.button(
                 "İnceleme",
                 use_container_width=True,
@@ -1205,7 +1353,7 @@ def render() -> None:
                 updated["reason"] = "Kullanıcı manuel inceleme işaretledi"
                 updated["timestamp"] = datetime.now(timezone.utc).isoformat()
                 results = persist_result_record(results, questions, updated)
-                st.info("Manuel durum: İnceleme")
+                st.rerun()
 
     render_metrics_panel(results)
     render_matrix_panel(questions, results)
@@ -1217,3 +1365,4 @@ def render() -> None:
 
 if __name__ == "__main__":
     render()
+

@@ -1,6 +1,6 @@
-# Turkish LLM Benchmark (MVP)
+# Open LLM Benchmark (MVP)
 
-Real-time Streamlit app for quickly evaluating open-source LLMs on Ollama Cloud with a simple Turkish Q/A benchmark.
+Real-time Streamlit app for benchmarking open-source LLMs on Ollama Cloud with a customizable Q/A dataset.
 
 ## Live App
 
@@ -14,9 +14,18 @@ GitHub repository:
 
 https://github.com/kmkarakaya/TurkishBenchmark
 
+## Social Links
+
+- YouTube: https://www.youtube.com/c/muratkarakayaakademi
+- Blog: https://www.muratkarakaya.net/
+- GitHub: https://github.com/kmkarakaya
+- LinkedIn: https://www.linkedin.com/in/muratkarakaya/
+
 ## Overview
 
-- This app uses a simple Turkish question-answer set to provide a fast baseline evaluation for Ollama Cloud models.
+- This app provides a reusable benchmark workflow for Ollama Cloud open models.
+- The default dataset in this repository is Turkish and serves as a sample baseline.
+- You can replace `data/benchmark.json` with your own domain/language benchmark set.
 - The questions were prepared by Murat Karakaya for instructional purposes.
 - The app provides a lightweight UI and backend to run evaluations, compare models, and record results automatically.
 
@@ -53,6 +62,8 @@ Source-of-truth dataset:
 
 - `data/benchmark.json`
 
+The repository ships with a Turkish sample dataset by default. You can fully replace this file to benchmark any language or domain.
+
 Required fields per question:
 
 - `id` (immutable, format `qNNN`, for example `q001`)
@@ -74,9 +85,9 @@ Dataset loading, validation, and writes are handled by:
 - `data/results.json`: canonical run results
 - `results.md`: auto-generated comparison report (accuracy + latency + matrix)
 
-## Current Results (Snapshot)
+## Current Results (Example Snapshot)
 
-Latest full report is in `results.md`. Current model comparison snapshot:
+Latest full report is in `results.md`. The numbers below are an example snapshot generated from the current default dataset:
 
 | Model        | Accuracy % | Success/Scored | Median (s) | Mean (s) | P95 (s) | Latency Score |
 | ------------ | ---------: | -------------: | ---------: | -------: | ------: | ------------: |
@@ -85,7 +96,7 @@ Latest full report is in `results.md`. Current model comparison snapshot:
 | gemma3:12b   |       69.6 |          16/23 |       3.18 |     4.46 |    6.60 |         100.0 |
 | gemma3:4b    |       34.8 |           8/23 |       3.43 |     4.14 |    9.38 |          92.8 |
 
-## Question Distribution by Topic
+## Default Dataset Distribution by Topic (Example)
 
 | Topic             | Question Count |          Share |
 | ----------------- | -------------: | -------------: |
@@ -103,16 +114,22 @@ Latest full report is in `results.md`. Current model comparison snapshot:
 
 - Questions are loaded only from `data/benchmark.json`.
 - If `OLLAMA_API_KEY` is missing at startup, the app shows a masked input and blocks execution until a key is provided.
-- You can benchmark one model or compare two different models side by side for the same question.
-- Selected models and the active question are processed together with live streaming output per model.
-- If you move to a question that has no saved record for the selected model(s), the app auto-starts those missing runs.
+- Sidebar flow is grouped as `Veri ve Sistem`, `Kullanım Modu`, and `Model Seçimi`.
+- `Kullanım Modu` has two explicit options: `Tek model` and `Karşılaştırma (2 model)`.
+- In `Tek model`, only Model 1 is used; in `Karşılaştırma`, Model 1 and Model 2 must both be set and different before run can start.
+- If you switch from comparison to single mode, Model 2 is kept as a hidden backup and restored when you switch back.
+- The main title area includes quick profile links (`YouTube`, `Blog`, `GitHub`, `LinkedIn`) as pill buttons.
+- Selected active models and the current question are processed together with live streaming output per model.
+- If you move to a question that has no saved record for the active model list, the app auto-starts those missing runs.
 - The expected answer is displayed as read-only.
-- The response area supports two modes: `Duz metin` and `Render (MD/HTML)`.
+- The response area supports two modes: `Düz metin` and `Render (MD/HTML)`, and the selected mode is preserved across reruns.
 - When two models are selected, their responses and manual evaluation controls are shown side by side.
 - If a selected model has no saved record for the current question, that response box is shown empty.
 - `Kopyala` is available next to the response header and is disabled while generation is running or when there is no text to copy.
 - `Durdur` sends a stop request; interrupted runs are saved as `manual_review`.
-- Automatic scoring is applied on completed runs, and manual override buttons (`Basarili`, `Basarisiz`, `Inceleme`) can update the saved result.
-- Status chips show `Durum` and scoring type (`Otomatik Puanlandi` or `Manuel Puanlandi`); the reason chip appears only for special cases (error/interrupted).
+- Automatic scoring is applied on completed runs, and manual override buttons (`Başarılı`, `Başarısız`, `İnceleme`) can update the saved result.
+- Status chips show `Durum` and scoring type (`Otomatik Puanlandı` or `Manuel Puanlandı`); chip state is refreshed immediately after manual override.
+- The in-app `Model Karşılaştırma` table uses `Başarım Puanı` and `Cevap Hızı Puanı` as score columns.
+- A note under `Model Karşılaştırma` warns that Ollama Cloud network/infrastructure can affect timing metrics; latency values should be interpreted relatively.
 - Every run/decision is saved to `data/results.json` and `results.md` is regenerated automatically.
-- The default system prompt enforces Turkish-only answers.
+- The default system prompt is language-agnostic and asks the model to answer in the same language as the question.

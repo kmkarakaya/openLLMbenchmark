@@ -171,7 +171,7 @@ def render_results_markdown(
     metrics = compute_model_metrics(results)
 
     lines: list[str] = []
-    lines.append("# Turkish LLM Benchmark Results")
+    lines.append("# Open LLM Benchmark Results")
     timestamp = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
     lines.append(f"_Güncellendi: {timestamp}_")
     lines.append("")
