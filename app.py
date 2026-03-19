@@ -47,7 +47,7 @@ DATA_DIR = ROOT / "data"
 BENCHMARK_PATH = DATA_DIR / "benchmark.json"
 RESULTS_PATH = DATA_DIR / "results.json"
 RESULTS_MD_PATH = ROOT / "results.md"
-RESPONSE_VIEW_OPTIONS = ["Düz metin", "Render (MD/HTML)"]
+RESPONSE_VIEW_OPTIONS = ["Plain text", "Render (MD/HTML)"]
 
 
 def init_page() -> None:
@@ -493,14 +493,14 @@ def pick_models(models: list[str]) -> tuple[list[str], bool]:
         if model and model not in options:
             options.append(model)
 
-    st.subheader("Kullanım Modu")
+    st.subheader("Usage Mode")
     mode_labels = {
-        "Tek model": MODE_SINGLE,
-        "Karşılaştırma (2 model)": MODE_PAIR,
+        "Single model": MODE_SINGLE,
+        "Comparison (2 models)": MODE_PAIR,
     }
     mode_options = list(mode_labels.keys())
     selected_mode = st.radio(
-        "Kullanım modu",
+        "Usage mode",
         options=mode_options,
         index=0 if benchmark_mode == MODE_SINGLE else 1,
         horizontal=True,
@@ -509,19 +509,19 @@ def pick_models(models: list[str]) -> tuple[list[str], bool]:
     benchmark_mode = mode_labels[selected_mode]
     st.session_state.benchmark_mode = benchmark_mode
     if benchmark_mode == MODE_SINGLE:
-        st.caption("Bir modeli tek başına değerlendirir.")
+        st.caption("Evaluates one model on its own.")
     else:
-        st.caption("Aynı soru için iki modeli yan yana test eder.")
+        st.caption("Tests two models side by side on the same question.")
 
     st.markdown("---")
-    st.subheader("Model Seçimi")
+    st.subheader("Model Selection")
     selected_1 = st.selectbox(
-        "Ollama Cloud LLM 1 seç",
+        "Select Ollama Cloud LLM 1",
         options=options,
         index=options.index(selected_model_1) if selected_model_1 in options else 0,
-        help="Model listesinden seçin veya model adını manuel girin.",
+        help="Choose from the model list or enter the model name manually.",
     )
-    manual_1 = st.text_input("Model 1 adı (manuel)", value=selected_1 or selected_model_1)
+    manual_1 = st.text_input("Model 1 name (manual)", value=selected_1 or selected_model_1)
     model_1 = manual_1.strip() or selected_1.strip()
 
     model_2 = selected_model_2
@@ -531,13 +531,13 @@ def pick_models(models: list[str]) -> tuple[list[str], bool]:
             second_options.append(selected_model_2)
 
         selected_2 = st.selectbox(
-            "Ollama Cloud LLM 2 seç",
+            "Select Ollama Cloud LLM 2",
             options=second_options,
             index=second_options.index(selected_model_2) if selected_model_2 in second_options else 0,
-            help="Karşılaştırma için ikinci model seçin veya model adını manuel girin.",
+            help="For comparison, select a second model or enter its name manually.",
         )
         manual_2 = st.text_input(
-            "Model 2 adı (manuel)",
+            "Model 2 name (manual)",
             value=selected_2 or (selected_model_2 if selected_model_2 != model_1 else ""),
         )
         model_2 = manual_2.strip() or selected_2.strip()
@@ -557,9 +557,9 @@ def pick_models(models: list[str]) -> tuple[list[str], bool]:
     run_eligible = is_run_eligible(benchmark_mode, active_models)
     if benchmark_mode == MODE_PAIR:
         if duplicate_selection:
-            st.warning("Karşılaştırma için iki farklı model seçin.")
+            st.warning("Select two different models for comparison.")
         elif not model_2:
-            st.info("Karşılaştırma modu için ikinci model seçin veya girin.")
+            st.info("Select or enter a second model for comparison mode.")
 
     st.session_state.selected_models = active_models
     st.session_state.selected_model = active_models[0] if active_models else ""
@@ -568,7 +568,7 @@ def pick_models(models: list[str]) -> tuple[list[str], bool]:
 
 def render_question_meta(question: dict[str, Any], selected_models: list[str]) -> None:
     question_id = html_escape(str(question.get("id", "-")))
-    category = html_escape(str(question.get("category", "GENEL")))
+    category = html_escape(str(question.get("category", "GENERAL")))
     model = html_escape(" | ".join(selected_models) or "-")
     hardness = html_escape(str(question.get("hardness_level", "")).strip() or "-")
     why_prepared = str(question.get("why_prepared", "")).strip()
@@ -576,10 +576,10 @@ def render_question_meta(question: dict[str, Any], selected_models: list[str]) -
     st.markdown(
         f"""
         <div class="meta-wrap">
-          <span class="meta-chip meta-id">Soru: {question_id}</span>
-          <span class="meta-chip meta-category">Kategori: {category}</span>
-          <span class="meta-chip meta-model">Seçili model: {model}</span>
-          <span class="meta-chip meta-hardness">Zorluk: {hardness}</span>
+          <span class="meta-chip meta-id">Question: {question_id}</span>
+          <span class="meta-chip meta-category">Category: {category}</span>
+          <span class="meta-chip meta-model">Selected model(s): {model}</span>
+          <span class="meta-chip meta-hardness">Difficulty: {hardness}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -589,7 +589,7 @@ def render_question_meta(question: dict[str, Any], selected_models: list[str]) -
         st.markdown(
             f"""
             <div class="meta-note">
-              <span class="meta-note-label">Neden hazırlandı:</span>
+              <span class="meta-note-label">Why prepared:</span>
               <span class="meta-note-text">{html_escape(why_prepared)}</span>
             </div>
             """,
@@ -615,7 +615,7 @@ def render_copy_button(response_text: str, key: str, disabled: bool = False) -> 
               background:{button_bg};color:#ffffff;border:1px solid {button_border};
               border-radius:10px;padding:0.4rem 0.9rem;font-weight:600;cursor:{button_cursor};
             ">
-            Kopyala
+            Copy
           </button>
           <span id="{status_id}" style="font-size:0.85rem;color:#475569;"></span>
         </div>
@@ -667,7 +667,7 @@ def render_copy_button(response_text: str, key: str, disabled: bool = False) -> 
           if (button) {{
             button.addEventListener("click", async () => {{
               if (!textToCopy || !textToCopy.trim()) {{
-                status.textContent = "Kopyalanacak metin yok";
+                status.textContent = "No text to copy";
                 return;
               }}
               try {{
@@ -681,10 +681,10 @@ def render_copy_button(response_text: str, key: str, disabled: bool = False) -> 
                 if (!copied) {{
                   throw new Error("copy_failed");
                 }}
-                status.textContent = "Kopyalandi";
+                status.textContent = "Copied";
                 setTimeout(() => status.textContent = "", 1500);
               }} catch (_err) {{
-                status.textContent = "Kopyalama basarisiz";
+                status.textContent = "Copy failed";
               }}
             }});
           }}
@@ -704,11 +704,11 @@ def render_response_content(response_text: str, view_mode: str, key: str) -> Non
     plain_widget_key = f"{key}_plain_text"
     render_empty_widget_key = f"{key}_render_empty_text"
 
-    if view_mode == "Düz metin":
+    if view_mode == "Plain text":
         if st.session_state.get(plain_widget_key) != value:
             st.session_state[plain_widget_key] = value
         st.text_area(
-            "Yanıt",
+            "Response",
             height=240,
             disabled=True,
             label_visibility="collapsed",
@@ -720,7 +720,7 @@ def render_response_content(response_text: str, view_mode: str, key: str) -> Non
         if render_empty_widget_key not in st.session_state:
             st.session_state[render_empty_widget_key] = ""
         st.text_area(
-            "Yanıt",
+            "Response",
             height=240,
             disabled=True,
             label_visibility="collapsed",
@@ -746,11 +746,11 @@ def find_result(
     return None
 
 
-def status_to_turkish(status: str) -> str:
+def status_to_label(status: str) -> str:
     mapping = {
-        "success": "Başarılı",
-        "fail": "Başarısız",
-        "manual_review": "İnceleme",
+        "success": "Successful",
+        "fail": "Failed",
+        "manual_review": "Review",
     }
     return mapping.get(status, status)
 
@@ -766,10 +766,10 @@ def status_chip_class(status: str) -> str:
 
 def render_result_meta(result: dict[str, Any]) -> None:
     raw_status = str(result.get("status", ""))
-    status_label = html_escape(status_to_turkish(raw_status) or "-")
+    status_label = html_escape(status_to_label(raw_status) or "-")
     status_class = status_chip_class(raw_status)
     auto_scored = bool(result.get("auto_scored"))
-    auto_label = "Otomatik Puanlandı" if auto_scored else "Manuel Puanlandı"
+    auto_label = "Auto-scored" if auto_scored else "Manually scored"
     auto_class = "status-auto-yes" if auto_scored else "status-auto-no"
     reason = str(result.get("reason", "")).strip()
     reason_chip_html = ""
@@ -780,6 +780,7 @@ def render_result_meta(result: dict[str, Any]) -> None:
             "hata" in reason_lower
             or "error" in reason_lower
             or "durdur" in reason_lower
+            or "stop" in reason_lower
             or "interrupt" in reason_lower
         )
     )
@@ -787,7 +788,7 @@ def render_result_meta(result: dict[str, Any]) -> None:
         reason_safe = html_escape(reason)
         reason_chip_html = (
             f'<span class="status-chip status-reason" title="{reason_safe}">'
-            f'<span class="status-reason-label">Açıklama:</span>'
+            f'<span class="status-reason-label">Reason:</span>'
             f'<span class="status-reason-text">{reason_safe}</span>'
             "</span>"
         )
@@ -795,7 +796,7 @@ def render_result_meta(result: dict[str, Any]) -> None:
     st.markdown(
         f"""
         <div class="status-wrap">
-          <span class="status-chip {status_class}">Durum: {status_label}</span>
+          <span class="status-chip {status_class}">Status: {status_label}</span>
           <span class="status-chip {auto_class}">{auto_label}</span>
           {reason_chip_html}
         </div>
@@ -831,7 +832,7 @@ def build_verdict(entry: dict[str, Any], expected_answer: str) -> dict[str, Any]
             "status": "manual_review",
             "score": None,
             "auto_scored": False,
-            "reason": "Kullanıcı tarafından durduruldu.",
+            "reason": "Stopped by user.",
         }
     if entry.get("error"):
         return {
@@ -887,30 +888,30 @@ def handle_completed_runs(
 
 def render_metrics_panel(results: list[dict[str, Any]]) -> None:
     metrics = compute_model_metrics(results)
-    st.subheader("Model Karşılaştırma")
+    st.subheader("Model Comparison")
     st.caption(
-        "Not: Süre metrikleri Ollama Cloud ağ/altyapı koşullarından etkilenebilir; "
-        "mutlak değerlerden çok modeller arası göreli karşılaştırma için yorumlanmalıdır."
+        "Note: Timing metrics can be affected by Ollama Cloud network/infrastructure conditions; "
+        "interpret them primarily as relative comparisons between models."
     )
     if not metrics:
-        st.caption("Henüz sonuç yok.")
+        st.caption("No results yet.")
         return
 
     frame = pd.DataFrame(
         {
-            "Model Adı": [row["model"] for row in metrics],
-            "Başarım Puanı": [round(row["accuracy_percent"], 1) for row in metrics],
-            "Cevap Hızı Puanı": [round(row["latency_score"], 1) for row in metrics],
-            "Başarılı/Puanlanan": [f"{row['success_count']}/{row['scored_count']}" for row in metrics],
-            "Medyan (sn)": [
+            "Model Name": [row["model"] for row in metrics],
+            "Performance Score": [round(row["accuracy_percent"], 1) for row in metrics],
+            "Response Speed Score": [round(row["latency_score"], 1) for row in metrics],
+            "Successful/Scored": [f"{row['success_count']}/{row['scored_count']}" for row in metrics],
+            "Median (s)": [
                 round((row["median_ms"] or 0.0) / 1000.0, 2) if row["median_ms"] else None
                 for row in metrics
             ],
-            "Ortalama (sn)": [
+            "Mean (s)": [
                 round((row["mean_ms"] or 0.0) / 1000.0, 2) if row["mean_ms"] else None
                 for row in metrics
             ],
-            "P95 (sn)": [
+            "P95 (s)": [
                 round((row["p95_ms"] or 0.0) / 1000.0, 2) if row["p95_ms"] else None
                 for row in metrics
             ],
@@ -921,37 +922,37 @@ def render_metrics_panel(results: list[dict[str, Any]]) -> None:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Model Adı": st.column_config.TextColumn(
-                "Model Adı",
-                help="Değerlendirilen Ollama model adı. Bu sütunda büyük/küçük sayı kıyası yoktur.",
+            "Model Name": st.column_config.TextColumn(
+                "Model Name",
+                help="Evaluated Ollama model name. This column is not a higher/lower-is-better metric.",
             ),
-            "Başarım Puanı": st.column_config.NumberColumn(
-                "Başarım Puanı",
-                help="(Başarılı cevap sayısı / puanlanan soru sayısı) x 100. Büyük değer daha iyidir.",
+            "Performance Score": st.column_config.NumberColumn(
+                "Performance Score",
+                help="(Successful answers / scored questions) x 100. Higher is better.",
                 format="%.1f",
             ),
-            "Başarılı/Puanlanan": st.column_config.TextColumn(
-                "Başarılı/Puanlanan",
-                help="Başarılı cevap sayısı / puanlanan toplam soru sayısı. Bu sütunda büyük/küçük sayı kıyası yoktur.",
+            "Successful/Scored": st.column_config.TextColumn(
+                "Successful/Scored",
+                help="Successful answers / total scored questions. This column is not a higher/lower-is-better metric.",
             ),
-            "Medyan (sn)": st.column_config.NumberColumn(
-                "Medyan (sn)",
-                help="Yanıt sürelerinin medyanı (saniye). Küçük değer daha iyidir.",
+            "Median (s)": st.column_config.NumberColumn(
+                "Median (s)",
+                help="Median response time in seconds. Lower is better.",
                 format="%.2f",
             ),
-            "Ortalama (sn)": st.column_config.NumberColumn(
-                "Ortalama (sn)",
-                help="Yanıt sürelerinin ortalaması (saniye). Küçük değer daha iyidir.",
+            "Mean (s)": st.column_config.NumberColumn(
+                "Mean (s)",
+                help="Mean response time in seconds. Lower is better.",
                 format="%.2f",
             ),
-            "P95 (sn)": st.column_config.NumberColumn(
-                "P95 (sn)",
-                help="%95 persentil yanıt süresi (saniye). Küçük değer daha iyidir.",
+            "P95 (s)": st.column_config.NumberColumn(
+                "P95 (s)",
+                help="95th percentile response time in seconds. Lower is better.",
                 format="%.2f",
             ),
-            "Cevap Hızı Puanı": st.column_config.NumberColumn(
-                "Cevap Hızı Puanı",
-                help="En hızlı modelin medyanına göre normalize edilmiş hız puanı (0-100). Büyük değer daha iyidir.",
+            "Response Speed Score": st.column_config.NumberColumn(
+                "Response Speed Score",
+                help="Speed score normalized by the fastest model median (0-100). Higher is better.",
                 format="%.1f",
             ),
         },
@@ -967,16 +968,16 @@ def render_matrix_panel(questions: list[dict[str, Any]], results: list[dict[str,
     matrix_rows: list[dict[str, Any]] = []
     for q in questions:
         row: dict[str, Any] = {
-            "Soru ID": q["id"],
-            "Kategori": q.get("category", "GENEL"),
+            "Question ID": q["id"],
+            "Category": q.get("category", "GENERAL"),
         }
         for model in models:
             row[model] = format_cell(mapping.get((q["id"], model)))
         matrix_rows.append(row)
 
-    st.subheader("Soru Bazlı Sonuç Matrisi")
+    st.subheader("Question-Level Results Matrix")
     st.dataframe(pd.DataFrame(matrix_rows), use_container_width=True, hide_index=True)
-    st.caption(f"Otomatik rapor: `{RESULTS_MD_PATH}`")
+    st.caption(f"Auto report: `{RESULTS_MD_PATH}`")
 
 
 def render() -> None:
@@ -1007,11 +1008,11 @@ def render() -> None:
 
     if not api_key:
         st.warning(
-            "Devam edebilmek için önce `OLLAMA_API_KEY` girmeniz gerekiyor. "
-            "Anahtar maskeli olarak alınır ve sadece mevcut oturumda kullanılır."
+            "To continue, enter `OLLAMA_API_KEY` first. "
+            "The key is entered in masked mode and used only in the current session."
         )
         st.info(
-            "ollama.com API'sine doğrudan erişim için önce bir API anahtarı oluşturun: "
+            "Create an API key first for direct access to ollama.com API: "
             "https://ollama.com/settings/keys"
         )
         entered_api_key = st.text_input(
@@ -1019,10 +1020,10 @@ def render() -> None:
             type="password",
             placeholder="sk-...",
         )
-        if st.button("API Anahtarını Kaydet ve Devam Et", type="primary"):
+        if st.button("Save API Key and Continue", type="primary"):
             normalized = entered_api_key.strip()
             if not normalized:
-                st.error("Lütfen geçerli bir API anahtarı girin.")
+                st.error("Please enter a valid API key.")
             else:
                 st.session_state.runtime_api_key = normalized
                 os.environ["OLLAMA_API_KEY"] = normalized
@@ -1030,17 +1031,17 @@ def render() -> None:
         st.stop()
 
     with st.sidebar:
-        st.header("Ayarlar")
-        st.subheader("Veri ve Sistem")
+        st.header("Settings")
+        st.subheader("Data & System")
         api_ok = bool(os.getenv("OLLAMA_API_KEY", "").strip())
-        st.write(f"API anahtarı durumu: {'✅ Hazır' if api_ok else '❌ Eksik'}")
-        if st.button("Soru Setini Yenile", use_container_width=True):
+        st.write(f"API key status: {'✅ Ready' if api_ok else '❌ Missing'}")
+        if st.button("Refresh Question Set", use_container_width=True):
             st.rerun()
 
-        if st.button("Modelleri Yenile", use_container_width=True):
+        if st.button("Refresh Models", use_container_width=True):
             try:
                 refresh_models()
-                st.success("Model listesi güncellendi.")
+                st.success("Model list refreshed.")
             except Exception as exc:  # noqa: BLE001
                 st.error(str(exc))
 
@@ -1055,7 +1056,7 @@ def render() -> None:
     question_by_id = {q["id"]: q for q in questions}
 
     if not questions:
-        st.error("Hiç soru bulunamadı. data/benchmark.json içeriğini kontrol edin.")
+        st.error("No questions found. Check data/benchmark.json content.")
         return
 
     if not RESULTS_PATH.exists():
@@ -1070,12 +1071,12 @@ def render() -> None:
             except Exception:
                 st.session_state.model_cache = []
         active_models, run_eligible = pick_models(st.session_state.model_cache)
-        st.caption(f"Toplam soru: {len(questions)}")
-        st.caption(f"Test edilen model sayısı: {len({r.get('model') for r in results if r.get('model')})}")
+        st.caption(f"Total questions: {len(questions)}")
+        st.caption(f"Tested model count: {len({r.get('model') for r in results if r.get('model')})}")
         st.markdown("---")
         st.markdown(
-            "Kaynak kod: "
-            "[github.com/kmkarakaya/TurkishBenchmark](https://github.com/kmkarakaya/TurkishBenchmark)"
+            "Source code: "
+            "[github.com/kmkarakaya/openLLMbenchmark](https://github.com/kmkarakaya/openLLMbenchmark)"
         )
 
     idx = st.session_state.question_index
@@ -1098,12 +1099,12 @@ def render() -> None:
 
     nav_a, nav_b, nav_c = st.columns([1, 2, 1])
     with nav_a:
-        if st.button("◀ Önceki", use_container_width=True, disabled=idx == 0):
+        if st.button("◀ Previous", use_container_width=True, disabled=idx == 0):
             st.session_state.question_index = max(0, idx - 1)
             st.rerun()
     with nav_b:
         goto = st.number_input(
-            "Soru no",
+            "Question #",
             min_value=1,
             max_value=len(questions),
             value=idx + 1,
@@ -1114,19 +1115,19 @@ def render() -> None:
             st.session_state.question_index = int(goto) - 1
             st.rerun()
     with nav_c:
-        if st.button("Sonraki ▶", use_container_width=True, disabled=idx >= len(questions) - 1):
+        if st.button("Next ▶", use_container_width=True, disabled=idx >= len(questions) - 1):
             st.session_state.question_index = min(len(questions) - 1, idx + 1)
             st.rerun()
 
     render_question_meta(question=question, selected_models=active_models)
     st.text_area(
-        "Soru metni",
+        "Question",
         value=question["prompt"],
         height=220,
         disabled=True,
     )
     st.text_area(
-        "Beklenen cevap",
+        "Expected answer",
         value=question.get("expected_answer", ""),
         height=100,
         disabled=True,
@@ -1137,7 +1138,7 @@ def render() -> None:
 
     run_col, stop_col = st.columns(2)
     with run_col:
-        start_label = "Yanıtları Başlat" if st.session_state.benchmark_mode == MODE_PAIR else "Yanıtı Başlat"
+        start_label = "Start Responses" if st.session_state.benchmark_mode == MODE_PAIR else "Start Response"
         if st.button(
             start_label,
             type="primary",
@@ -1152,16 +1153,16 @@ def render() -> None:
                 system_prompt=st.session_state.system_prompt,
             )
             if not ok:
-                st.warning("Aktif bir çalışma zaten var.")
+                st.warning("A run is already active.")
             st.rerun()
     with stop_col:
         if st.button(
-            "Durdur",
+            "Stop",
             use_container_width=True,
             disabled=not snapshot["running"],
         ):
             runner.request_stop()
-            st.info("Durdurma isteği gönderildi.")
+            st.info("Stop request sent.")
     results = handle_completed_runs(
         snapshot=snapshot,
         results=results,
@@ -1194,7 +1195,7 @@ def render() -> None:
                     st.session_state.pending_autorun = None
                     st.rerun()
 
-    panel_title = "Model Karşılaştırma Sonuçları" if st.session_state.benchmark_mode == MODE_PAIR else "Tek Model Sonucu"
+    panel_title = "Model Comparison Results" if st.session_state.benchmark_mode == MODE_PAIR else "Single Model Result"
     response_view_options = RESPONSE_VIEW_OPTIONS
     if st.session_state.response_view_mode_pref not in response_view_options:
         st.session_state.response_view_mode_pref = response_view_options[0]
@@ -1214,7 +1215,7 @@ def render() -> None:
             radio_pad_left, line_radio_col, radio_pad_right = st.columns([1, 2, 1])
             with line_radio_col:
                 st.radio(
-                    "Yanıt görünümü",
+                    "Response view",
                     options=response_view_options,
                     key="response_view_mode_widget",
                     horizontal=True,
@@ -1234,9 +1235,9 @@ def render() -> None:
             elif saved:
                 display_latency_s = float(saved.get("response_time_ms") or 0.0) / 1000.0
 
-            response_header = f"{model or 'Model Seçilmedi'} Yanıtı"
+            response_header = f"{model or 'No model selected'} Response"
             if display_latency_s is not None:
-                response_header += f" | Yanıt süresi: {display_latency_s:.2f}s"
+                response_header += f" | Response time: {display_latency_s:.2f}s"
 
             copy_response = ""
             copy_key = f"resp_none_{question['id']}_{panel_index}"
@@ -1269,19 +1270,19 @@ def render() -> None:
                 )
                 if not live_response.strip():
                     if active_entry.get("completed"):
-                        st.warning("Bu çalıştırmada model boş yanıt döndürdü. Tekrar çalıştırmayı deneyin.")
+                        st.warning("This run returned an empty response for the model. Try running again.")
                     else:
-                        st.warning("Yanıt henüz gelmedi veya boş döndü.")
+                        st.warning("Response has not arrived yet or returned empty.")
                 if active_entry.get("error"):
                     st.error(str(active_entry["error"]))
                 elif active_entry.get("interrupted"):
-                    st.warning("Çalışma kullanıcı tarafından durduruldu.")
+                    st.warning("Run was stopped by the user.")
                 if saved and active_entry.get("completed"):
                     saved_response = str(saved.get("response", ""))
                     if saved_response == live_response:
                         render_result_meta(saved)
                 elif saved and active_entry.get("running"):
-                    st.caption("Canlı çalışma sürüyor. Durum rozetleri çalışma tamamlandığında güncellenecek.")
+                    st.caption("Live run in progress. Status chips will refresh when completion is finalized.")
             elif saved:
                 saved_response = str(saved.get("response", ""))
                 render_response_content(
@@ -1290,7 +1291,7 @@ def render() -> None:
                     key=f"response_saved_{question['id']}_{model}",
                 )
                 if not saved_response.strip():
-                    st.warning("Bu kayıtta model yanıtı boş.")
+                    st.warning("Model response is empty in this record.")
                 render_result_meta(saved)
             else:
                 render_response_content(
@@ -1299,19 +1300,19 @@ def render() -> None:
                     key=f"response_empty_{question['id']}_{panel_index}",
                 )
                 if model:
-                    st.info("Seçili model için henüz kayıt yok.")
+                    st.info("No record yet for the selected model.")
                 else:
-                    st.info("Lütfen en az bir model seçin.")
+                    st.info("Please select at least one model.")
 
             manual_target = saved
             if active_entry and active_entry.get("completed"):
                 manual_target = find_result(results, question["id"], model) if model else manual_target
 
-            st.subheader("Manuel Karar")
+            st.subheader("Manual Decision")
             c1, c2, c3 = st.columns(3)
             can_override = bool(model and manual_target)
             if c1.button(
-                "Başarılı",
+                "Successful",
                 use_container_width=True,
                 disabled=not can_override,
                 key=f"manual_success_{question['id']}_{model or panel_index}",
@@ -1320,13 +1321,13 @@ def render() -> None:
                 updated["status"] = "success"
                 updated["score"] = 1
                 updated["auto_scored"] = False
-                updated["reason"] = "Kullanıcı onayı"
+                updated["reason"] = "User approval"
                 updated["interrupted"] = False
                 updated["timestamp"] = datetime.now(timezone.utc).isoformat()
                 results = persist_result_record(results, questions, updated)
                 st.rerun()
             if c2.button(
-                "Başarısız",
+                "Failed",
                 use_container_width=True,
                 disabled=not can_override,
                 key=f"manual_fail_{question['id']}_{model or panel_index}",
@@ -1335,13 +1336,13 @@ def render() -> None:
                 updated["status"] = "fail"
                 updated["score"] = 0
                 updated["auto_scored"] = False
-                updated["reason"] = "Kullanıcı onayı"
+                updated["reason"] = "User approval"
                 updated["interrupted"] = False
                 updated["timestamp"] = datetime.now(timezone.utc).isoformat()
                 results = persist_result_record(results, questions, updated)
                 st.rerun()
             if c3.button(
-                "İnceleme",
+                "Review",
                 use_container_width=True,
                 disabled=not can_override,
                 key=f"manual_review_{question['id']}_{model or panel_index}",
@@ -1350,7 +1351,7 @@ def render() -> None:
                 updated["status"] = "manual_review"
                 updated["score"] = None
                 updated["auto_scored"] = False
-                updated["reason"] = "Kullanıcı manuel inceleme işaretledi"
+                updated["reason"] = "Marked by user for manual review"
                 updated["timestamp"] = datetime.now(timezone.utc).isoformat()
                 results = persist_result_record(results, questions, updated)
                 st.rerun()

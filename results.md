@@ -1,5 +1,5 @@
 # Open LLM Benchmark Results
-_Güncellendi: 2026-03-19T19:48:20+03:00_
+_Güncellendi: 2026-03-19T20:34:41+03:00_
 
 ## Model Karşılaştırma
 | Model | Accuracy % | Success/Scored | Median | Mean | P95 | Latency Score |

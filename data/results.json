@@ -54,10 +54,10 @@
     "status": "success",
     "score": 1,
     "response_time_ms": 1990.48,
-    "timestamp": "2026-03-19T16:18:41.321033+00:00",
+    "timestamp": "2026-03-19T17:34:41.001265+00:00",
     "interrupted": false,
     "auto_scored": false,
-    "reason": "Kullanıcı onayı"
+    "reason": "User approval"
   },
   {
     "question_id": "q002",
