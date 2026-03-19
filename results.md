@@ -1,5 +1,5 @@
 # Open LLM Benchmark Results
-_Güncellendi: 2026-03-19T20:34:41+03:00_
+_Güncellendi: 2026-03-19T20:40:50+03:00_
 
 ## Model Karşılaştırma
 | Model | Accuracy % | Success/Scored | Median | Mean | P95 | Latency Score |
@@ -7,12 +7,12 @@ _Güncellendi: 2026-03-19T20:34:41+03:00_
 | qwen3.5:397b | 100.0 | 23/23 | 13.42s | 15.27s | 37.47s | 23.7 |
 | gemma3:27b | 82.6 | 19/23 | 6.02s | 6.36s | 10.77s | 52.8 |
 | gemma3:12b | 69.6 | 16/23 | 3.18s | 4.43s | 6.60s | 100.0 |
-| gemma3:4b | 34.8 | 8/23 | 3.25s | 4.01s | 9.38s | 97.8 |
+| gemma3:4b | 39.1 | 9/23 | 3.25s | 3.95s | 9.38s | 97.8 |
 
 ## Soru Bazlı Sonuç Matrisi
 | Soru ID | Kategori | gemma3:12b | gemma3:27b | gemma3:4b | qwen3.5:397b |
 |---|---|---|---|---|---|
-| q001 | Türkçe | ✅ 1.99s | ✅ 3.62s | ❌ 2.73s | ✅ 11.68s |
+| q001 | Türkçe | ✅ 1.99s | ✅ 3.62s | ✅ 1.36s | ✅ 11.68s |
 | q002 | Türkçe | ✅ 2.47s | ✅ 2.58s | ✅ 1.68s | ✅ 13.65s |
 | q003 | Türkçe | ✅ 2.37s | ✅ 6.47s | ✅ 2.64s | ✅ 14.52s |
 | q004 | Türkçe | ✅ 2.52s | ✅ 3.57s | ✅ 3.25s | ✅ 21.58s |

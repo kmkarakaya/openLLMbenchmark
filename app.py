@@ -4,6 +4,7 @@ import json
 import os
 import time
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 from html import escape as html_escape
 from pathlib import Path
@@ -231,6 +232,24 @@ def init_page() -> None:
             background: #ffffff !important;
             color: var(--ink) !important;
             border-color: #c8d5e3 !important;
+          }
+          [data-testid="stSidebar"] [data-testid="stExpander"] details > summary {
+            background: var(--accent) !important;
+            border: 1px solid var(--accent-strong) !important;
+            border-radius: 10px !important;
+            padding: 0.35rem 0.6rem !important;
+          }
+          [data-testid="stSidebar"] [data-testid="stExpander"] details > summary:hover,
+          [data-testid="stSidebar"] [data-testid="stExpander"] details[open] > summary {
+            background: var(--accent-hover) !important;
+          }
+          [data-testid="stSidebar"] [data-testid="stExpander"] details > summary *,
+          [data-testid="stSidebar"] [data-testid="stExpander"] details > summary p,
+          [data-testid="stSidebar"] [data-testid="stExpander"] details > summary span,
+          [data-testid="stSidebar"] [data-testid="stExpander"] details > summary svg {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
           }
           [data-testid="stAppViewContainer"] h1,
           [data-testid="stAppViewContainer"] h2,
@@ -750,7 +769,7 @@ def status_to_label(status: str) -> str:
     mapping = {
         "success": "Successful",
         "fail": "Failed",
-        "manual_review": "Review",
+        "manual_review": "Needs Review",
     }
     return mapping.get(status, status)
 
@@ -970,6 +989,7 @@ def render_matrix_panel(questions: list[dict[str, Any]], results: list[dict[str,
         row: dict[str, Any] = {
             "Question ID": q["id"],
             "Category": q.get("category", "GENERAL"),
+            "Difficulty": str(q.get("hardness_level", "")).strip() or "(missing)",
         }
         for model in models:
             row[model] = format_cell(mapping.get((q["id"], model)))
@@ -977,7 +997,151 @@ def render_matrix_panel(questions: list[dict[str, Any]], results: list[dict[str,
 
     st.subheader("Question-Level Results Matrix")
     st.dataframe(pd.DataFrame(matrix_rows), use_container_width=True, hide_index=True)
-    st.caption(f"Auto report: `{RESULTS_MD_PATH}`")
+
+
+def _normalize_metadata_value(value: Any) -> str:
+    normalized = str(value or "").strip()
+    return normalized if normalized else "(missing)"
+
+
+def build_dataset_metadata_stats(questions: list[dict[str, Any]]) -> pd.DataFrame:
+    total_questions = len(questions)
+    if total_questions == 0:
+        return pd.DataFrame(columns=["Section", "Metric", "Count", "Share (%)"])
+
+    topics = [_normalize_metadata_value(item.get("category", "")) for item in questions]
+    hardness_levels = [_normalize_metadata_value(item.get("hardness_level", "")) for item in questions]
+    why_prepared_values = [_normalize_metadata_value(item.get("why_prepared", "")) for item in questions]
+
+    topic_counter = Counter(topics)
+    hardness_counter = Counter(hardness_levels)
+
+    non_missing_topics = sum(1 for value in topics if value != "(missing)")
+    non_missing_hardness = sum(1 for value in hardness_levels if value != "(missing)")
+    non_missing_why_prepared = sum(1 for value in why_prepared_values if value != "(missing)")
+
+    rows: list[dict[str, Any]] = [
+        {"Section": "Summary", "Metric": "Total questions", "Count": total_questions, "Share (%)": None},
+        {"Section": "Summary", "Metric": "Unique topics", "Count": len(topic_counter), "Share (%)": None},
+        {"Section": "Summary", "Metric": "Unique hardness levels", "Count": len(hardness_counter), "Share (%)": None},
+        {
+            "Section": "Summary",
+            "Metric": "Questions with topic",
+            "Count": non_missing_topics,
+            "Share (%)": round(100.0 * non_missing_topics / total_questions, 1),
+        },
+        {
+            "Section": "Summary",
+            "Metric": "Questions with hardness level",
+            "Count": non_missing_hardness,
+            "Share (%)": round(100.0 * non_missing_hardness / total_questions, 1),
+        },
+        {
+            "Section": "Summary",
+            "Metric": "Questions with why_prepared",
+            "Count": non_missing_why_prepared,
+            "Share (%)": round(100.0 * non_missing_why_prepared / total_questions, 1),
+        },
+    ]
+
+    for topic, count in sorted(topic_counter.items(), key=lambda x: (-x[1], x[0])):
+        rows.append(
+            {
+                "Section": "Topic",
+                "Metric": topic,
+                "Count": count,
+                "Share (%)": round(100.0 * count / total_questions, 1),
+            }
+        )
+
+    for hardness, count in sorted(hardness_counter.items(), key=lambda x: (-x[1], x[0])):
+        rows.append(
+            {
+                "Section": "Hardness",
+                "Metric": hardness,
+                "Count": count,
+                "Share (%)": round(100.0 * count / total_questions, 1),
+            }
+        )
+
+    return pd.DataFrame(rows, columns=["Section", "Metric", "Count", "Share (%)"])
+
+
+def render_dataset_metadata_stats_panel(questions: list[dict[str, Any]]) -> None:
+    st.subheader("Dataset & Metadata Statistics")
+    stats_frame = build_dataset_metadata_stats(questions)
+    if stats_frame.empty:
+        st.caption("No dataset statistics available.")
+        return
+
+    topic_frame = (
+        stats_frame[stats_frame["Section"] == "Topic"][["Metric", "Count"]]
+        .rename(columns={"Metric": "Topic"})
+        .copy()
+    )
+    hardness_frame = (
+        stats_frame[stats_frame["Section"] == "Hardness"][["Metric", "Count"]]
+        .rename(columns={"Metric": "Difficulty"})
+        .copy()
+    )
+
+    if not topic_frame.empty:
+        topic_total = float(topic_frame["Count"].sum())
+        topic_frame["Share (%)"] = topic_frame["Count"].apply(lambda x: round(100.0 * float(x) / topic_total, 1))
+    if not hardness_frame.empty:
+        hardness_total = float(hardness_frame["Count"].sum())
+        hardness_frame["Share (%)"] = hardness_frame["Count"].apply(
+            lambda x: round(100.0 * float(x) / hardness_total, 1)
+        )
+
+    topic_col, difficulty_col = st.columns(2)
+    with topic_col:
+        st.markdown("**Topic Distribution**")
+        if topic_frame.empty:
+            st.caption("No topic values found.")
+        else:
+            st.vega_lite_chart(
+                topic_frame,
+                {
+                    "mark": {"type": "arc", "innerRadius": 46},
+                    "encoding": {
+                        "theta": {"field": "Count", "type": "quantitative"},
+                        "color": {"field": "Topic", "type": "nominal", "legend": {"title": "Topic"}},
+                        "tooltip": [
+                            {"field": "Topic", "type": "nominal"},
+                            {"field": "Count", "type": "quantitative"},
+                            {"field": "Share (%)", "type": "quantitative"},
+                        ],
+                    },
+                },
+                use_container_width=True,
+            )
+
+    with difficulty_col:
+        st.markdown("**Difficulty Distribution**")
+        if hardness_frame.empty:
+            st.caption("No difficulty values found.")
+        else:
+            st.vega_lite_chart(
+                hardness_frame,
+                {
+                    "mark": {"type": "arc", "innerRadius": 46},
+                    "encoding": {
+                        "theta": {"field": "Count", "type": "quantitative"},
+                        "color": {
+                            "field": "Difficulty",
+                            "type": "nominal",
+                            "legend": {"title": "Difficulty"},
+                        },
+                        "tooltip": [
+                            {"field": "Difficulty", "type": "nominal"},
+                            {"field": "Count", "type": "quantitative"},
+                            {"field": "Share (%)", "type": "quantitative"},
+                        ],
+                    },
+                },
+                use_container_width=True,
+            )
 
 
 def render() -> None:
@@ -1073,6 +1237,28 @@ def render() -> None:
         active_models, run_eligible = pick_models(st.session_state.model_cache)
         st.caption(f"Total questions: {len(questions)}")
         st.caption(f"Tested model count: {len({r.get('model') for r in results if r.get('model')})}")
+        with st.expander("Quick User Manual", expanded=False):
+            st.markdown(
+                """
+1. Set a valid `OLLAMA_API_KEY` to enable model access.
+2. Use `Refresh Question Set` and `Refresh Models` after changing dataset or model availability.
+3. Choose `Usage Mode`: `Single model` or `Comparison (2 models)`.
+4. Select model(s). In comparison mode, Model 1 and Model 2 must be different.
+5. Click `Start Response` or `Start Responses` to run benchmark generation.
+6. Read outputs in `Plain text` or `Render (MD/HTML)` view.
+7. If needed, override automatic scoring with `Successful`, `Failed`, or `Needs Review`.
+8. Final outputs are saved to `data/results.json` and `results.md`.
+                """
+            )
+            st.markdown(
+                """
+**Metrics note**
+
+- Performance Score: higher is better.
+- Response Speed Score: higher is better.
+- Raw timing values can vary due to Ollama Cloud network/infrastructure conditions, so interpret latency mainly as a relative model-to-model comparison.
+                """
+            )
         st.markdown("---")
         st.markdown(
             "Source code: "
@@ -1342,7 +1528,7 @@ def render() -> None:
                 results = persist_result_record(results, questions, updated)
                 st.rerun()
             if c3.button(
-                "Review",
+                "Needs Review",
                 use_container_width=True,
                 disabled=not can_override,
                 key=f"manual_review_{question['id']}_{model or panel_index}",
@@ -1358,6 +1544,7 @@ def render() -> None:
 
     render_metrics_panel(results)
     render_matrix_panel(questions, results)
+    render_dataset_metadata_stats_panel(questions)
 
     if snapshot["running"]:
         time.sleep(0.45)

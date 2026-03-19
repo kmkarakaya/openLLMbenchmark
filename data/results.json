@@ -2,14 +2,14 @@
   {
     "question_id": "q001",
     "model": "gemma3:4b",
-    "response": "Doğru cevap **C) Semiz, sevgi, sevinç, sebze, sergi, seyir** şeklindedir.\n\nSözcüklerin anlamları ve yaklaşık olarak sözlükte yer alacakları sıra şu şekilde olabilir:\n\n1.  **Semiz:** (Zengin, yağlı) - İlk kelimeler genellikle daha temel ve sıklıkla kullanılan kelimelerdir.\n2.  **Sevgi:** (Aşk, muhabbet) - Duygusal kavramlar genellikle erken sıralarda yer alır.\n3.  **Sevinç:** (Neşe, mutluluk) - Sevgiyle benzer bir duygu kategorisindedir.\n4.  **Sebze:** (Bitkisel yiyecek) - Somut bir nesne olduğu için daha sonra yer alır.\n5.  **Sergi:** (Eserlerin sergilendiği yer) - Bir etkinlik veya yer olduğu için daha geç sıralara gelir.\n6.  **Seyir:** (Gözlem, bakış) - Bir fiil ve durum tanımlayıcısı olduğu için son sıralarda yer alır.\n\nUmarım yardımcı olmuştur! Başka bir sorunuz varsa çekinmeyin.",
-    "status": "fail",
-    "score": 0,
-    "response_time_ms": 2731.87,
-    "timestamp": "2026-03-19T16:18:48.929019+00:00",
+    "response": "B) Sebze, semiz, sergi, sevgi, sevinç, seyir",
+    "status": "success",
+    "score": 1,
+    "response_time_ms": 1364.46,
+    "timestamp": "2026-03-19T17:40:50.609270+00:00",
     "interrupted": false,
     "auto_scored": false,
-    "reason": "Kullanıcı onayı"
+    "reason": "User approval"
   },
   {
     "question_id": "q002",

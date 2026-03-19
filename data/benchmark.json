@@ -130,7 +130,7 @@
   {
     "question": "Bir şirket, 2023 yılının ilk çeyreğinde 5 milyon TL ciro elde etti. İkinci çeyrekte ciro %20 oranında artarak 6 milyon TL'ye ulaştı. Üçüncü çeyrekte ise ciro, ikinci çeyreğe göre %10 oranında düştü.\nŞirket, dördüncü çeyrekte ise üçüncü çeyrekteki ciro miktarını %25 artırmayı başardı. Bu dönemde, şirketin giderleri her çeyrek için sırasıyla 3 milyon TL,4 milyon TL, 3.5 milyon TL ve 3.8 milyon TL olarak gerçekleşti. \nSoru:Şirketin 2023 yılı dördüncü çeyrekteki net kârı kaç milyon TL'dir?",
     "expected_answer": "Cevap\nAnahtarı: 2.95 milyon TL\nŞirketin net kârı, cirodan giderlerin\nçıkarılmasıyla hesaplanır.\n \n1.      İlk çeyrek ciro: 5 milyon TL\n2.      İkinci çeyrek ciro: 6 milyon TL\n3.      Üçüncü çeyrek ciro:\no  İkinci çeyreğe göre %10 düştü:\no  6 milyon TL * 0.9 = 5.4 milyon\nTL\n4.      Dördüncü çeyrek ciro:\no  Üçüncü çeyreğe göre %25 arttı:\no  5.4 milyon TL * 1.25 = 6.75\nmilyon TL\nDördüncü çeyrek gideri: 3.8 milyon TL\nNet kâr hesaplaması:\n\n\n Dördüncü çeyrek ciro: 6.75 milyon TL\n\n Dördüncü çeyrek gider: 3.8 milyon TL\n\n Net kâr: 6.75 milyon TL - 3.8 milyon TL = 2.95 milyon TL",
-    "topic": "FİNANS",
+    "topic": "Finans",
     "hardness_level": "Orta",
     "why_prepared": "Yüzdelik hesaplamalar üzerinden ciro ve gider farkını bularak net kâr hesaplayabilme becerisi.",
     "id": "q017"
@@ -138,7 +138,7 @@
   {
     "question": "Bir şirket, 2023 yılının ilk çeyreğinde 5 milyon TL ciro elde etti. İkinci çeyrekte ciro %20 oranında artarak 6 milyon TL'ye ulaştı. Üçüncü çeyrekte ise ciro, ikinci çeyreğe göre %10 oranında düştü. Şirket, dördüncü\nçeyrekte ise üçüncü çeyrekteki ciro miktarını %25 artırmayı başardı. Şirketin giderleri her çeyrek için sırasıyla 3 milyon TL, 4 milyon TL, 3.5 milyon TL ve 3.8 milyon TL olarak gerçekleşti. Ayrıca, şirketin yıllık amortisman gideri 1.2 milyon TL olup bu tutar her çeyrek için eşit olarak dağıtılmıştır. Şirket, her çeyrekte cirosunun %5'i kadar vergi ödemektedir.\nSoru: Şirketin 2023 yılı dördüncü çeyrekteki net kârı kaç milyon TL'dir?",
     "expected_answer": "2.3125 Milyon TL\n1.      Ciro\nHesaplamaları:\no  İlk Çeyrek: 5 milyon TL\no  İkinci Çeyrek: 5 milyon TL * 1.20 = 6 milyon TL\no  Üçüncü Çeyrek: 6 milyon TL * 0.90 = 5.4 milyon TL\no  Dördüncü\nÇeyrek: 5.4 milyon TL * 1.25 = 6.75 milyon TL\n2.      Giderler:\no  İlk Çeyrek: 3 milyon TL\no  İkinci Çeyrek: 4 milyon TL\no  Üçüncü Çeyrek: 3.5 milyon TL\no  Dördüncü\nÇeyrek: 3.8 milyon TL\n3.      Amortisman\nGideri:\no  Yıllık amortisman gideri 1.2\nmilyon TL olduğu için her çeyrek için amortisman gideri: 1.2 milyon TL / 4 =\n0.3 milyon TL\n4.      Vergi Ödemesi:\no  Vergi ödemesi her çeyrek için\ncironun %5'i kadardır.\n§  Dördüncü Çeyrek Cirosu: 6.75 milyon\nTL\n§  Dördüncü Çeyrek Vergi: 6.75 milyon\nTL * 0.05 = 0.3375 milyon TL\n5.      Dördüncü\nÇeyrek Net Kârı Hesaplama:\no  Dördüncü\nÇeyrek Ciro: 6.75 milyon TL\no  Dördüncü\nÇeyrek Giderleri: 3.8 milyon TL\no  Dördüncü\nÇeyrek Amortisman Gideri: 0.3 milyon TL\no  Dördüncü\nÇeyrek Vergi: 0.3375 milyon TL\nDördüncü\nçeyrek net kârı şu şekilde hesaplanır:\nNet Kâr = Ciro\n- Giderler - Amortisman Gideri - Vergi = 6.75 milyon TL - 3.8 milyon TL - 0.3\nmilyon TL - 0.3375 milyon TL = 6.75 milyon TL - 4.4375 milyon TL = 2.3125\nmilyon TL\nSonuç olarak, şirketin 2023 yılı dördüncü\nçeyrekteki net kârı 2.3125 milyon TL'dir.",
-    "topic": "FİNANS",
+    "topic": "Finans",
     "hardness_level": "Zor",
     "why_prepared": "Amortisman ve vergi gibi ek finansal parametreleri hesaba katarak karmaşık net kâr hesaplaması yapabilme.",
     "id": "q018"
@@ -146,7 +146,7 @@
   {
     "question": "Aşağıda verilen kullanıcı gereksinimlerine göre tek bir HTML dosyası içine gereken tüm kodu yaz:\nÇekiliş Yapma Web Sayfası\nFonksiyonel Gereksinimler:\n Kullanıcı, \"Çekiliş Yap\" butonuna basarak bir ile doksan arasında altı farklı rastgele rakamın üretilmesini sağlamalı.\n Her çekiliş sonucu, çekiliş numarası ile birlikte sayfanın altına yazılmalı (örnek: \"1. Çekiliş: 12, 34, 45, 56, 67, 78\").\n Kullanıcı, \"Çekilişi Bitir\" butonuna basarak yapılan tüm çekilişlerde seçilen sayıların toplam frekansını görebilmeli.\nFrekanslar gösterildikten sonra yeni bir buton ortaya çıkmalı ve  \"İndir\" ismi olmalı.\n \"İndir\" butonuna basınca tüm çekilişler ve her çekilişteki sayılar JSON formatında indirilebilmeli.\nArayüz Gereksinimleri:\n Sayfada \"Çekiliş Yap\" ve \"Çekilişi Bitir\" olmak üzere iki buton bulunmalı.\n Her çekiliş sonucu, butonların altında ayrı ayrı alt alta gösterilmeli.\n Çekilişi bitirince, yapılan çekilişlerde seçilmiş olan her bir sayı için frekans raporu gösterilmeli.\n Frekans raporu gösterildikten sonra \"İndir\" butonu görünür hale gelmeli.\nTeknik Gereksinimler:\n HTML5 ve CSS3 kullanılmalı.\n JavaScript ile rastgele sayı üretimi ve frekans hesaplama yapılmalı.\n JSON verisi oluşturma ve indirme işlevi JavaScript ile gerçekleştirilmelidir.\n Sayfa responsive olmalı ve tüm cihazlarda düzgün görüntülenmeli.\nPerformans Gereksinimleri:\n Çekiliş sonuçlarının görüntülenmesi anında olmalı.\n Çekilişi bitirme işlemi frekans hesaplama ve rapor gösterimi anında yapılmalı.\n JSON dosyasının oluşturulması ve indirilmesi hızlı ve kullanıcıyı bekletmeyecek şekilde gerçekleştirilmelidir.\nJSON Formatı:\nJSON dosyasının formatı aşağıdaki gibi olacaktır:\njson Kodu kopyala\n{\n    \"cekilisler\": [\n        {\n            \"cekilisNo\": 1,\n            \"sayilar\": [12,\n34, 45, 56, 67, 78]\n        },\n        {\n            \"cekilisNo\": 2,\n            \"sayilar\": [11,\n22, 33, 44, 55, 66]\n        },\n        ...\n    ]\n}",
     "expected_answer": "Kullanıcıya özel oluşturulacak tek dosyalık HTML, CSS ve JS bloğu.",
-    "topic": "KODLAMA",
+    "topic": "Kodlama",
     "hardness_level": "Zor",
     "why_prepared": "Algoritma tasarlama, DOM manipülasyonu, olay dinleme (event handling) ve JSON/veri indirme işlemlerini pratik koda dökme becerisi.",
     "id": "q019"
@@ -154,7 +154,7 @@
   {
     "question": "Aşağıdaki yemek tarifi için verilen malzeme\nlistesine göre kullanılacak toplam tuz miktarı nedir? \nPilavlı Patlıcan Kapama Tarifi İçin\nMalzemeler\n\n\n 3 yemek kaşığı sıvı yağ\n\n 250 gram kuzu\n     kuşbaşı eti\n\n 1 adet soğan (yemeklik\n     doğranmış)\n\n 1 adet yeşil biber (doğranmış)\n\n 1 adet domates (büyük\n     boy, küp doğranmış)\n\n 1 çay\n     kaşığı tuz\n\n ½ çay kaşığı karabiber\n\n 1 su bardağı su\n\n 1 adet defne\n     yaprağı\n\n 1,5 yemek kaşığı sıvı yağ (pilav için)\n\n 1,5 yemek kaşığı tereyağı (pilav için)\n\n 2 su bardağı baldo pirinç (suda bekletilmiş)\n\n 3,5 su bardağı sıcak su\n\n 1,5\n     çay kaşığı tuz\n\n 4 adet patlıcan (dilimlenmiş,\n     kızartılmış)\n\n 1 avuç maydanoz (kıyılmış)",
     "expected_answer": "2,5 çay kaşığı (1 çay kaşığı et sotesi için + 1,5 çay kaşığı pilav için)",
-    "topic": "HAFIZA",
+    "topic": "Hafıza",
     "hardness_level": "Kolay",
     "why_prepared": "Uzun ve karmaşık metinler içindeki spesifik detayı tarayarak bulma ve basit toplama yapma.",
     "id": "q020"
@@ -162,7 +162,7 @@
   {
     "question": "Aşağıdaki yemek tarifi için verilen malzemelerini 3 gruba ayır ve listele \nPilavlı Patlıcan Kapama Tarifi İçin Malzemeler\n\n\n 3 yemek kaşığı sıvı yağ\n\n 250 gram kuzu kuşbaşı eti\n\n 1 adet soğan (yemeklik doğranmış)\n\n 1 adet yeşil biber (doğranmış)\n\n 1 adet domates (büyük boy, küp doğranmış)\n\n 1 çay kaşığı tuz\n\n ½ çay kaşığı karabiber\n\n 1 su bardağı su\n\n 1 adet defne yaprağı\n\n 1,5 yemek kaşığı sıvı yağ (pilav için)\n\n 1,5 yemek kaşığı tereyağı (pilav için)\n\n 2 su bardağı baldo pirinç (suda bekletilmiş)\n\n 3,5 su bardağı sıcak su\n\n 1,5 çay kaşığı tuz\n\n 4 adet patlıcan (dilimlenmiş, kızartılmış)\n\n 1 avuç maydanoz (kıyılmış)",
     "expected_answer": "1. Et/Ana Ürünler: Kuzu kuşbaşı eti.\n2. Sebzeler/Otlar: Soğan, yeşil biber, domates, patlıcan, maydanoz.\n3. Yağ, Baharat ve Yardımcı Malzemeler: Sıvı yağ, tereyağı, tuz, karabiber, su, defne yaprağı, baldo pirinç.",
-    "topic": "HAFIZA",
+    "topic": "Hafıza",
     "hardness_level": "Orta",
     "why_prepared": "Karışık listelenen verileri anlamlı bir yapıya kavuşturarak kategorize edebilme becerisi.",
     "id": "q021"
@@ -170,7 +170,7 @@
   {
     "question": "Aşağıdaki yemek tarifi için verilen malzemelerden sebze olanlarını listele \nPilavlı Patlıcan Kapama Tarifi İçin Malzemeler\n\n\n 3 yemek kaşığı sıvı yağ\n\n 250 gram kuzu kuşbaşı eti\n\n 1 adet soğan (yemeklik doğranmış)\n\n 1 adet yeşil biber (doğranmış)\n\n 1 adet domates (büyük boy, küp doğranmış)\n\n 1 çay kaşığı tuz\n\n ½ çay kaşığı karabiber\n\n 1 su bardağı su\n\n 1 adet defne yaprağı\n\n 1,5 yemek kaşığı sıvı yağ (pilav için)\n\n 1,5 yemek kaşığı tereyağı (pilav için)\n\n 2 su bardağı baldo pirinç (suda bekletilmiş)\n\n 3,5 su bardağı sıcak su\n\n 1,5 çay kaşığı tuz\n\n 4 adet patlıcan (dilimlenmiş, kızartılmış)\n\n 1 avuç maydanoz (kıyılmış)",
     "expected_answer": "Soğan, yeşil biber, domates, patlıcan, maydanoz.",
-    "topic": "HAFIZA",
+    "topic": "Hafıza",
     "hardness_level": "Kolay",
     "why_prepared": "Liste içinden belirli bir özelliğe/kategoriye sahip elemanları seçip ayıklayabilme.",
     "id": "q022"
@@ -178,7 +178,7 @@
   {
     "question": "Aşağıdaki yemek tarifi için verilen malzemelerden meyve olanlarını listele \nPilavlı Patlıcan Kapama Tarifi İçin Malzemeler\n\n\n 3 yemek kaşığı sıvı yağ\n\n 250 gram kuzu kuşbaşı eti\n\n 1 adet soğan (yemeklik doğranmış)\n\n 1 adet yeşil biber (doğranmış)\n\n 1 adet domates (büyük boy, küp doğranmış)\n\n 1 çay kaşığı tuz\n\n ½ çay kaşığı karabiber\n\n 1 su bardağı su\n\n 1 adet defne yaprağı\n\n 1,5 yemek kaşığı sıvı yağ (pilav için)\n\n 1,5 yemek kaşığı tereyağı (pilav için)\n\n 2 su bardağı baldo pirinç (suda bekletilmiş)\n\n 3,5 su bardağı sıcak su\n\n 1,5 çay kaşığı tuz\n\n 4 adet patlıcan (dilimlenmiş, kızartılmış)\n\n 1 avuç maydanoz (kıyılmış)",
     "expected_answer": "Domates, yeşil biber, patlıcan (Biyolojik olarak çekirdekli oldukları için meyvedirler ancak mutfakta sebze olarak kabul edilirler. Liste bağlamında meyve bulunmadığı da doğru kabul edilebilir).",
-    "topic": "HAFIZA",
+    "topic": "Hafıza",
     "hardness_level": "Zor",
     "why_prepared": "Temel genel kültür bilgisi ile (meyve-sebze ayrımı) liste tarama işlevini birleştirerek dikkat ölçme.",
     "id": "q023"
