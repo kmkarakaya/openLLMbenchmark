@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import math
 import os
@@ -7,6 +8,8 @@ import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import pandas as pd
 
 
 STATUS_ICON = {
@@ -211,3 +214,18 @@ def render_results_markdown(
         lines.append("")
 
     output_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def prepare_results_json(results: list[dict[str, Any]]) -> bytes:
+    """Serialise *results* to a UTF-8-encoded JSON byte string ready for download."""
+    return json.dumps(results, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+def prepare_results_excel(results: list[dict[str, Any]]) -> bytes:
+    """Convert *results* to an Excel (.xlsx) workbook and return the raw bytes."""
+    df = pd.DataFrame(results) if results else pd.DataFrame()
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="Results")
+    return buffer.getvalue()
+

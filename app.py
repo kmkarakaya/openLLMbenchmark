@@ -37,6 +37,8 @@ from storage import (
     compute_model_metrics,
     format_cell,
     load_results,
+    prepare_results_excel,
+    prepare_results_json,
     render_results_markdown,
     save_results,
     upsert_result,
@@ -491,6 +493,16 @@ def refresh_models() -> list[str]:
     models = list_models(client)
     st.session_state.model_cache = models
     return models
+
+
+@st.cache_data
+def _cached_results_json(results: list[dict[str, Any]]) -> bytes:
+    return prepare_results_json(results)
+
+
+@st.cache_data
+def _cached_results_excel(results: list[dict[str, Any]]) -> bytes:
+    return prepare_results_excel(results)
 
 
 def normalize_selected_models(*values: str) -> list[str]:
@@ -1237,6 +1249,23 @@ def render() -> None:
         active_models, run_eligible = pick_models(st.session_state.model_cache)
         st.caption(f"Total questions: {len(questions)}")
         st.caption(f"Tested model count: {len({r.get('model') for r in results if r.get('model')})}")
+        st.subheader("Download Results")
+        st.download_button(
+            label="⬇ Download as JSON",
+            data=_cached_results_json(results),
+            file_name="results.json",
+            mime="application/json",
+            use_container_width=True,
+            disabled=not results,
+        )
+        st.download_button(
+            label="⬇ Download as Excel",
+            data=_cached_results_excel(results),
+            file_name="results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            disabled=not results,
+        )
         with st.expander("Quick User Manual", expanded=False):
             st.markdown(
                 """
