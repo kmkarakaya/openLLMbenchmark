@@ -26,14 +26,14 @@
   {
     "question_id": "q003",
     "model": "gemma3:4b",
-    "response": "Doğru cevap **C) Özensiz**.\n\nŞöyle açıklayayım:\n\n*   **Taklit:** İngilizce \"imitation\" kelimesinin Türkçesi taklit'tir. Cümlelerde \"İmitasyon ürünler\" ifadesi kullanılıyor.\n*   **Zamanlama:** İngilizce \"timing\" kelimesinin Türkçesi zamanlama'dır. Cümlelerde \"tayming hatası\" ifadesi kullanılıyor.\n*   **Ölçüt:** İngilizce \"criterion\" kelimesinin Türkçesi ölçüt'tür. Cümlede \"İşe alacağınız kişiler için kriteriniz var mı?\" ifadesi geçiyor.\n*   **Özensiz:** Bu kelime Türkçedir, İngilizce karşılığı yoktur. Cümlenin anlamına uygun bir karşılığı \"dikkatli olmamak\" veya \"soğuk\" olabilir.\n\nUmarım yardımcı olmuştur! Başka bir sorunuz varsa çekinmeyin.",
+    "response": "C) Özensiz.\n\nAçıklama:\n\n*   **Taklit:** \"İmitasyon\" kelimesinin Türkçeleştirilmiş hali.\n*   **Zamanlama:** \"Timing\" kelimesinin Türkçeleştirilmiş hali.\n*   **Ölçüt:** \"Criterium\" kelimesinin Türkçeleştirilmiş hali.\n*   **Özensiz:** İngilizce'de \"careless\" kelimesinin doğrudan çevresi değil, \"dikkatli olmamak\" anlamına gelir.",
     "status": "success",
     "score": 1,
-    "response_time_ms": 2644.12,
-    "timestamp": "2026-03-19T16:14:58.429099+00:00",
+    "response_time_ms": 1778.75,
+    "timestamp": "2026-03-20T12:19:36.022461+00:00",
     "interrupted": false,
     "auto_scored": false,
-    "reason": "Kullanıcı onayı"
+    "reason": "User approval"
   },
   {
     "question_id": "q004",
@@ -74,14 +74,14 @@
   {
     "question_id": "q003",
     "model": "gemma3:12b",
-    "response": "Cevap **C) Özensiz**.\n\nDiğer seçeneklerin yabancı dilden geldiği görülüyor:\n\n*   **Taklit:** İtalyanca \"imitare\" kelimesinden gelmektedir.\n*   **Zamanlama:** İngilizce \"timing\" kelimesinden gelmektedir.\n*   **Ölçüt:** İngilizce \"criterion\" kelimesinden gelmektedir.\n\n**Özensiz** kelimesi ise tamamen Türkçe kökenlidir.",
+    "response": "Doğru cevap **C) Özensiz**.\n\nDiğer seçeneklerin yabancı kökenli karşılıkları:\n\n*   **Taklit:** Imitasyon (İtalyanca)\n*   **Zamanlama:** Timing (İngilizce)\n*   **Ölçüt:** Kriter (Yunança)\n\n\"Özensiz\" ise tamamen Türkçe bir kelimedir.",
     "status": "success",
     "score": 1,
-    "response_time_ms": 2370.2,
-    "timestamp": "2026-03-19T16:14:57.266134+00:00",
+    "response_time_ms": 1960.95,
+    "timestamp": "2026-03-20T12:19:31.586544+00:00",
     "interrupted": false,
     "auto_scored": false,
-    "reason": "Kullanıcı onayı"
+    "reason": "User approval"
   },
   {
     "question_id": "q004",

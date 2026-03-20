@@ -98,12 +98,29 @@ def init_page() -> None:
             padding-top: 1.5rem;
           }
           .page-main-title {
-            margin: 0.2rem 0 1.1rem 0;
+            margin: 0.2rem 0 0.35rem 0;
             text-align: center;
             font-size: clamp(2rem, 3.8vw, 3rem);
             font-weight: 800;
             letter-spacing: -0.02em;
             color: var(--ink);
+          }
+          .page-byline {
+            margin: 0 0 0.45rem 0;
+            text-align: center;
+            color: var(--accent-strong);
+            line-height: 1.2;
+          }
+          .page-byline-by {
+            display: block;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.12rem;
+          }
+          .page-byline-name {
+            display: block;
+            font-size: 1.5rem;
+            font-weight: 700;
           }
           .profile-pill-wrap {
             display: flex;
@@ -212,11 +229,53 @@ def init_page() -> None:
             color: #ffffff !important;
             -webkit-text-fill-color: #ffffff !important;
           }
+          [data-testid="stSidebar"] .stDownloadButton > button,
+          [data-testid="stAppViewContainer"] .stDownloadButton > button {
+            background: #ffffff !important;
+            color: var(--accent-strong) !important;
+            border: 1px solid #9cbfdc !important;
+            border-radius: 10px !important;
+            min-height: 40px !important;
+            padding: 0.38rem 0.75rem !important;
+            line-height: 1.2 !important;
+            font-weight: 650 !important;
+            box-shadow: 0 2px 8px rgba(18, 74, 115, 0.12) !important;
+          }
+          [data-testid="stSidebar"] .stDownloadButton > button *,
+          [data-testid="stSidebar"] .stDownloadButton > button p,
+          [data-testid="stSidebar"] .stDownloadButton > button span,
+          [data-testid="stSidebar"] .stDownloadButton > button div,
+          [data-testid="stSidebar"] .stDownloadButton [data-testid="stMarkdownContainer"],
+          [data-testid="stSidebar"] .stDownloadButton [data-testid="stMarkdownContainer"] *,
+          [data-testid="stSidebar"] .stDownloadButton [data-testid="stMarkdownContainer"] p,
+          [data-testid="stSidebar"] .stDownloadButton [data-testid="stMarkdownContainer"] span {
+            color: var(--accent-strong) !important;
+            -webkit-text-fill-color: var(--accent-strong) !important;
+          }
+          [data-testid="stSidebar"] .stDownloadButton > button:hover,
+          [data-testid="stAppViewContainer"] .stDownloadButton > button:hover {
+            background: #eef6ff !important;
+            border-color: var(--accent) !important;
+            color: var(--accent-strong) !important;
+            transform: translateY(-1px);
+          }
+          [data-testid="stSidebar"] .stDownloadButton > button:focus,
+          [data-testid="stSidebar"] .stDownloadButton > button:focus-visible {
+            outline: none !important;
+            box-shadow: 0 0 0 3px rgba(31, 111, 170, 0.2) !important;
+          }
           [data-testid="stAppViewContainer"] .stButton > button:disabled,
           [data-testid="stSidebar"] .stButton > button:disabled {
             background: var(--disabled-bg) !important;
             color: #ffffff !important;
             border-color: var(--disabled-border) !important;
+            opacity: 1 !important;
+          }
+          [data-testid="stAppViewContainer"] .stDownloadButton > button:disabled,
+          [data-testid="stSidebar"] .stDownloadButton > button:disabled {
+            background: #e5edf5 !important;
+            color: #6b7f95 !important;
+            border-color: #c6d7e8 !important;
             opacity: 1 !important;
           }
           [data-testid="stAppViewContainer"] .stButton > button[kind="primary"] {
@@ -509,6 +568,17 @@ def normalize_selected_models(*values: str) -> list[str]:
     return normalize_models(*values)
 
 
+def sidebar_collapsible_section(title: str, state_key: str, default: bool = False) -> bool:
+    if state_key not in st.session_state:
+        st.session_state[state_key] = default
+    is_open = bool(st.session_state[state_key])
+    chevron = "▾" if is_open else "▸"
+    if st.button(f"{chevron} {title}", key=f"{state_key}_toggle", use_container_width=True):
+        is_open = not is_open
+        st.session_state[state_key] = is_open
+    return is_open
+
+
 def pick_models(models: list[str]) -> tuple[list[str], bool]:
     options = [""] + models
     existing = normalize_selected_models(*st.session_state.selected_models, st.session_state.selected_model)
@@ -524,54 +594,59 @@ def pick_models(models: list[str]) -> tuple[list[str], bool]:
         if model and model not in options:
             options.append(model)
 
-    st.subheader("Usage Mode")
-    mode_labels = {
-        "Single model": MODE_SINGLE,
-        "Comparison (2 models)": MODE_PAIR,
-    }
-    mode_options = list(mode_labels.keys())
-    selected_mode = st.radio(
-        "Usage mode",
-        options=mode_options,
-        index=0 if benchmark_mode == MODE_SINGLE else 1,
-        horizontal=True,
-        label_visibility="collapsed",
+    benchmark_config_open = sidebar_collapsible_section(
+        "Benchmark Config",
+        "sidebar_benchmark_config_open",
+        default=False,
     )
-    benchmark_mode = mode_labels[selected_mode]
-    st.session_state.benchmark_mode = benchmark_mode
-    if benchmark_mode == MODE_SINGLE:
-        st.caption("Evaluates one model on its own.")
-    else:
-        st.caption("Tests two models side by side on the same question.")
-
-    st.markdown("---")
-    st.subheader("Model Selection")
-    selected_1 = st.selectbox(
-        "Select Ollama Cloud LLM 1",
-        options=options,
-        index=options.index(selected_model_1) if selected_model_1 in options else 0,
-        help="Choose from the model list or enter the model name manually.",
-    )
-    manual_1 = st.text_input("Model 1 name (manual)", value=selected_1 or selected_model_1)
-    model_1 = manual_1.strip() or selected_1.strip()
-
+    model_1 = selected_model_1
     model_2 = selected_model_2
-    if benchmark_mode == MODE_PAIR:
-        second_options = [""] + [item for item in options[1:] if item != model_1]
-        if selected_model_2 and selected_model_2 not in second_options and selected_model_2 != model_1:
-            second_options.append(selected_model_2)
+    if benchmark_config_open:
+        st.subheader("Usage Mode")
+        mode_labels = {
+            "Single model": MODE_SINGLE,
+            "Comparison (2 models)": MODE_PAIR,
+        }
+        mode_options = list(mode_labels.keys())
+        selected_mode = st.radio(
+            "Usage mode",
+            options=mode_options,
+            index=0 if benchmark_mode == MODE_SINGLE else 1,
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        benchmark_mode = mode_labels[selected_mode]
+        st.session_state.benchmark_mode = benchmark_mode
+        if benchmark_mode == MODE_SINGLE:
+            st.caption("Evaluates one model on its own.")
+        else:
+            st.caption("Tests two models side by side on the same question.")
 
-        selected_2 = st.selectbox(
-            "Select Ollama Cloud LLM 2",
-            options=second_options,
-            index=second_options.index(selected_model_2) if selected_model_2 in second_options else 0,
-            help="For comparison, select a second model or enter its name manually.",
+        st.subheader("Model Selection")
+        selected_1 = st.selectbox(
+            "Select Ollama Cloud LLM 1",
+            options=options,
+            index=options.index(selected_model_1) if selected_model_1 in options else 0,
+            help="Choose from the model list or enter the model name manually.",
         )
-        manual_2 = st.text_input(
-            "Model 2 name (manual)",
-            value=selected_2 or (selected_model_2 if selected_model_2 != model_1 else ""),
-        )
-        model_2 = manual_2.strip() or selected_2.strip()
+        manual_1 = st.text_input("Model 1 name (manual)", value=selected_1 or selected_model_1)
+        model_1 = manual_1.strip() or selected_1.strip()
+        if benchmark_mode == MODE_PAIR:
+            second_options = [""] + [item for item in options[1:] if item != model_1]
+            if selected_model_2 and selected_model_2 not in second_options and selected_model_2 != model_1:
+                second_options.append(selected_model_2)
+
+            selected_2 = st.selectbox(
+                "Select Ollama Cloud LLM 2",
+                options=second_options,
+                index=second_options.index(selected_model_2) if selected_model_2 in second_options else 0,
+                help="For comparison, select a second model or enter its name manually.",
+            )
+            manual_2 = st.text_input(
+                "Model 2 name (manual)",
+                value=selected_2 or (selected_model_2 if selected_model_2 != model_1 else ""),
+            )
+            model_2 = manual_2.strip() or selected_2.strip()
 
     active_models, duplicate_selection = resolve_active_models(
         mode=benchmark_mode,
@@ -586,7 +661,7 @@ def pick_models(models: list[str]) -> tuple[list[str], bool]:
     )
 
     run_eligible = is_run_eligible(benchmark_mode, active_models)
-    if benchmark_mode == MODE_PAIR:
+    if benchmark_config_open and benchmark_mode == MODE_PAIR:
         if duplicate_selection:
             st.warning("Select two different models for comparison.")
         elif not model_2:
@@ -1166,7 +1241,17 @@ def render() -> None:
     )
     st.markdown(
         """
+        <div class="page-byline">
+          <span class="page-byline-by">By</span>
+          <span class="page-byline-name">Murat Karakaya Akademi</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
         <div class="profile-pill-wrap">
+          <a class="profile-pill" href="https://github.com/kmkarakaya/openLLMbenchmark" target="_blank" rel="noopener noreferrer">Source Code</a>
           <a class="profile-pill" href="https://www.youtube.com/c/muratkarakayaakademi" target="_blank" rel="noopener noreferrer">YouTube</a>
           <a class="profile-pill" href="https://www.muratkarakaya.net/" target="_blank" rel="noopener noreferrer">Blog</a>
           <a class="profile-pill" href="https://github.com/kmkarakaya" target="_blank" rel="noopener noreferrer">GitHub</a>
@@ -1207,19 +1292,17 @@ def render() -> None:
         st.stop()
 
     with st.sidebar:
-        st.header("Settings")
-        st.subheader("Data & System")
+        st.subheader("Status:")
         api_ok = bool(os.getenv("OLLAMA_API_KEY", "").strip())
-        st.write(f"API key status: {'✅ Ready' if api_ok else '❌ Missing'}")
-        if st.button("Refresh Question Set", use_container_width=True):
-            st.rerun()
-
-        if st.button("Refresh Models", use_container_width=True):
-            try:
-                refresh_models()
-                st.success("Model list refreshed.")
-            except Exception as exc:  # noqa: BLE001
-                st.error(str(exc))
+        api_status_text = "Ready" if api_ok else "Missing"
+        st.markdown(
+            f"🔐 API key status: <strong>{html_escape(api_status_text)}</strong>",
+            unsafe_allow_html=True,
+        )
+        usage_mode_info = st.empty()
+        selected_models_info = st.empty()
+        total_questions_info = st.empty()
+        tested_model_count_info = st.empty()
 
     try:
         payload = ensure_dataset()
@@ -1247,36 +1330,91 @@ def render() -> None:
             except Exception:
                 st.session_state.model_cache = []
         active_models, run_eligible = pick_models(st.session_state.model_cache)
-        st.caption(f"Total questions: {len(questions)}")
-        st.caption(f"Tested model count: {len({r.get('model') for r in results if r.get('model')})}")
-        st.subheader("Download Results")
-        st.download_button(
-            label="⬇ Download as JSON",
-            data=_cached_results_json(results),
-            file_name="results.json",
-            mime="application/json",
-            use_container_width=True,
-            disabled=not results,
+        current_mode = sanitize_mode(st.session_state.benchmark_mode)
+        mode_label = "Single model" if current_mode == MODE_SINGLE else "Comparison (2 models)"
+        selected_models_lines = active_models if active_models else ["-"]
+        selected_models_lines_html = "<br>".join(html_escape(model) for model in selected_models_lines)
+        tested_model_count = len({r.get("model") for r in results if r.get("model")})
+        usage_mode_info.markdown(
+            f"🎯 Usage Mode: <strong>{html_escape(mode_label)}</strong>",
+            unsafe_allow_html=True,
         )
-        st.download_button(
-            label="⬇ Download as Excel",
-            data=_cached_results_excel(results),
-            file_name="results.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-            disabled=not results,
+        selected_models_info.markdown(
+            f"🧠 Selected Model(s):<br><strong>{selected_models_lines_html}</strong>",
+            unsafe_allow_html=True,
         )
-        with st.expander("Quick User Manual", expanded=False):
+        total_questions_info.markdown(
+            f"🧩 Total questions: <strong>{len(questions)}</strong>",
+            unsafe_allow_html=True,
+        )
+        tested_model_count_info.markdown(
+            f"📊 Tested model count: <strong>{tested_model_count}</strong>",
+            unsafe_allow_html=True,
+        )
+        if sidebar_collapsible_section(
+            "Download Results",
+            "sidebar_download_results_open",
+            default=False,
+        ):
+            selected_download_format = st.radio(
+                "Download format",
+                options=["JSON", "Excel"],
+                index=0,
+                horizontal=True,
+                label_visibility="collapsed",
+                key="download_results_format",
+            )
+            json_bytes = _cached_results_json(results) if results else b""
+            excel_bytes: bytes = b""
+            excel_download_disabled = not results
+            excel_dependency_hint = ""
+            if results:
+                try:
+                    excel_bytes = _cached_results_excel(results)
+                except ModuleNotFoundError as exc:
+                    if exc.name == "openpyxl":
+                        excel_download_disabled = True
+                        excel_dependency_hint = (
+                            "Excel export disabled because `openpyxl` is not available in the active Python environment."
+                        )
+                    else:
+                        raise
+            if selected_download_format == "JSON":
+                st.download_button(
+                    label="Download JSON",
+                    data=json_bytes,
+                    file_name="results.json",
+                    mime="application/json",
+                    use_container_width=False,
+                    disabled=not results,
+                )
+            else:
+                st.download_button(
+                    label="Download Excel",
+                    data=excel_bytes,
+                    file_name="results.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=False,
+                    disabled=excel_download_disabled,
+                )
+            if excel_dependency_hint:
+                st.caption(excel_dependency_hint)
+        if sidebar_collapsible_section(
+            "Quick User Manual",
+            "sidebar_quick_user_manual_open",
+            default=False,
+        ):
             st.markdown(
                 """
 1. Set a valid `OLLAMA_API_KEY` to enable model access.
-2. Use `Refresh Question Set` and `Refresh Models` after changing dataset or model availability.
-3. Choose `Usage Mode`: `Single model` or `Comparison (2 models)`.
-4. Select model(s). In comparison mode, Model 1 and Model 2 must be different.
+2. Check current run context under `Status` (`Usage Mode`, `Selected Model(s)`, `Total questions`, `Tested model count`).
+3. Open `Benchmark Config` and choose `Usage Mode`: `Single model` or `Comparison (2 models)`.
+4. Select model(s). In comparison mode, Model 1 and Model 2 must be set and different.
 5. Click `Start Response` or `Start Responses` to run benchmark generation.
 6. Read outputs in `Plain text` or `Render (MD/HTML)` view.
 7. If needed, override automatic scoring with `Successful`, `Failed`, or `Needs Review`.
-8. Final outputs are saved to `data/results.json` and `results.md`.
+8. Open `Download Results`, choose `JSON` or `Excel`, and download the selected format.
+9. Final outputs are saved to `data/results.json` and `results.md`.
                 """
             )
             st.markdown(
@@ -1288,12 +1426,6 @@ def render() -> None:
 - Raw timing values can vary due to Ollama Cloud network/infrastructure conditions, so interpret latency mainly as a relative model-to-model comparison.
                 """
             )
-        st.markdown("---")
-        st.markdown(
-            "Source code: "
-            "[github.com/kmkarakaya/openLLMbenchmark](https://github.com/kmkarakaya/openLLMbenchmark)"
-        )
-
     idx = st.session_state.question_index
     idx = max(0, min(idx, len(questions) - 1))
     st.session_state.question_index = idx

@@ -97,11 +97,14 @@ If `OLLAMA_API_KEY` is missing at startup, the app asks for it via masked input 
 
 ## Current UI Behavior
 
-- Sidebar groups: `Data & System`, `Usage Mode`, `Model Selection`.
+- Sidebar groups: `Status`, `Benchmark Config`, `Download Results`, `Quick User Manual`.
+- `Status` shows dynamic run context: API key status, usage mode, selected model(s), total questions, tested model count.
 - Usage modes: `Single model` and `Comparison (2 models)`.
+- `Benchmark Config` contains both usage mode and model selection controls.
 - Response view modes: `Plain text` and `Render (MD/HTML)`.
 - In comparison mode, both models must be set and different.
 - Model 2 value is preserved when switching modes.
+- `Download Results` lets you choose format (`JSON` / `Excel`) and download the selected format.
 - `Copy` is disabled while generation is active or when response text is empty.
 - `Stop` marks interrupted runs as `manual_review`.
 
