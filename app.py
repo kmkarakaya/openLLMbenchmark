@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -18,6 +19,17 @@ from data.benchmark import (
     DEFAULT_SYSTEM_PROMPT,
     DatasetValidationError,
     load_benchmark_payload,
+)
+from data.dataset_config import (
+    compute_dataset_signature,
+    DEFAULT_DATASET_KEY,
+    delete_uploaded_dataset_with_artifacts,
+    DatasetOption,
+    dataset_template_bytes,
+    DatasetDeleteSummary,
+    discover_datasets,
+    resolve_results_paths,
+    save_uploaded_dataset,
 )
 from engine import get_client, list_models
 from mode_selection import (
@@ -48,6 +60,7 @@ from storage import (
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 BENCHMARK_PATH = DATA_DIR / "benchmark.json"
+UPLOADED_DATASETS_DIR = DATA_DIR / "uploaded_datasets"
 RESULTS_PATH = DATA_DIR / "results.json"
 RESULTS_MD_PATH = ROOT / "results.md"
 RESPONSE_VIEW_OPTIONS = ["Plain text", "Render (MD/HTML)"]
@@ -229,6 +242,19 @@ def init_page() -> None:
             color: #ffffff !important;
             -webkit-text-fill-color: #ffffff !important;
           }
+          [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+            background: var(--fail) !important;
+            border-color: #8f1f18 !important;
+            box-shadow: 0 4px 10px rgba(143, 31, 24, 0.24) !important;
+          }
+          [data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+            background: #9f231c !important;
+            border-color: #7f1a14 !important;
+          }
+          [data-testid="stSidebar"] .stButton > button[kind="primary"]:active {
+            background: #7f1a14 !important;
+            border-color: #6d1711 !important;
+          }
           [data-testid="stSidebar"] .stDownloadButton > button,
           [data-testid="stAppViewContainer"] .stDownloadButton > button {
             background: #ffffff !important;
@@ -258,6 +284,53 @@ def init_page() -> None:
             border-color: var(--accent) !important;
             color: var(--accent-strong) !important;
             transform: translateY(-1px);
+          }
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"] {
+            background: #ffffff !important;
+            color: var(--accent-strong) !important;
+            border: 1px solid #9cbfdc !important;
+            border-radius: 10px !important;
+            min-height: 40px !important;
+            padding: 0.38rem 0.75rem !important;
+            line-height: 1.2 !important;
+            font-weight: 650 !important;
+            box-shadow: 0 2px 8px rgba(18, 74, 115, 0.12) !important;
+          }
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"] *,
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"] p,
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"] span,
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"] div,
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"] [data-testid="stMarkdownContainer"],
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"] [data-testid="stMarkdownContainer"] * {
+            color: var(--accent-strong) !important;
+            -webkit-text-fill-color: var(--accent-strong) !important;
+          }
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"]:hover {
+            background: #eef6ff !important;
+            border-color: var(--accent) !important;
+            color: var(--accent-strong) !important;
+            transform: translateY(-1px);
+          }
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"]:focus,
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"]:focus-visible {
+            outline: none !important;
+            box-shadow: 0 0 0 3px rgba(31, 111, 170, 0.2) !important;
+          }
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"]:disabled {
+            background: #e5edf5 !important;
+            color: #6b7f95 !important;
+            border-color: #c6d7e8 !important;
+            opacity: 1 !important;
+            box-shadow: 0 2px 8px rgba(18, 74, 115, 0.12) !important;
+          }
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"]:disabled *,
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"]:disabled p,
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"]:disabled span,
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"]:disabled div,
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"]:disabled [data-testid="stMarkdownContainer"],
+          [data-testid="stSidebar"] .stButton > button[aria-label*="Delete Uploaded Dataset"]:disabled [data-testid="stMarkdownContainer"] * {
+            color: #6b7f95 !important;
+            -webkit-text-fill-color: #6b7f95 !important;
           }
           [data-testid="stSidebar"] .stDownloadButton > button:focus,
           [data-testid="stSidebar"] .stDownloadButton > button:focus-visible {
@@ -293,6 +366,26 @@ def init_page() -> None:
             background: #ffffff !important;
             color: var(--ink) !important;
             border-color: #c8d5e3 !important;
+          }
+          [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
+            background: #ffffff !important;
+            border: 1px dashed #9cbfdc !important;
+          }
+          [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] *,
+          [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] p,
+          [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] span,
+          [data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"] * {
+            color: var(--ink) !important;
+            -webkit-text-fill-color: var(--ink) !important;
+          }
+          [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
+            background: #eef6ff !important;
+            color: var(--accent-strong) !important;
+            border: 1px solid #9cbfdc !important;
+          }
+          [data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button * {
+            color: var(--accent-strong) !important;
+            -webkit-text-fill-color: var(--accent-strong) !important;
           }
           [data-testid="stSidebar"] [data-testid="stExpander"] details > summary {
             background: var(--accent) !important;
@@ -387,6 +480,11 @@ def init_page() -> None:
             background: #e6f8f2;
             border-color: #b8eadb;
             color: #0f766e !important;
+          }
+          .meta-dataset {
+            background: #ecfeff;
+            border-color: #bae6fd;
+            color: #0c4a6e !important;
           }
           .meta-model {
             background: #e9eefc;
@@ -541,10 +639,38 @@ def init_state() -> None:
         st.session_state.last_seen_question_id = ""
     if "pending_autorun" not in st.session_state:
         st.session_state.pending_autorun = None
+    if "selected_dataset_key" not in st.session_state:
+        st.session_state.selected_dataset_key = DEFAULT_DATASET_KEY
+    if "active_dataset_key" not in st.session_state:
+        st.session_state.active_dataset_key = st.session_state.selected_dataset_key
+    if "dataset_upload_signature" not in st.session_state:
+        st.session_state.dataset_upload_signature = ""
+    if "dataset_delete_pending_key" not in st.session_state:
+        st.session_state.dataset_delete_pending_key = ""
+    if "dataset_delete_notice" not in st.session_state:
+        st.session_state.dataset_delete_notice = ""
+    if "dataset_delete_notice_level" not in st.session_state:
+        st.session_state.dataset_delete_notice_level = "success"
+    if "active_run_dataset_key" not in st.session_state:
+        st.session_state.active_run_dataset_key = ""
+    if "active_run_question_id" not in st.session_state:
+        st.session_state.active_run_question_id = ""
+    if "active_run_prompt" not in st.session_state:
+        st.session_state.active_run_prompt = ""
 
 
-def ensure_dataset() -> dict[str, Any]:
-    return load_benchmark_payload(BENCHMARK_PATH)
+def ensure_dataset(dataset_path: Path) -> dict[str, Any]:
+    return load_benchmark_payload(dataset_path)
+
+
+def reset_dataset_runtime_state() -> None:
+    st.session_state.question_index = 0
+    st.session_state.pending_autorun = None
+    st.session_state.last_seen_question_id = ""
+    st.session_state.persisted_run_entry_keys = []
+    st.session_state.active_run_dataset_key = ""
+    st.session_state.active_run_question_id = ""
+    st.session_state.active_run_prompt = ""
 
 
 def refresh_models() -> list[str]:
@@ -577,6 +703,233 @@ def sidebar_collapsible_section(title: str, state_key: str, default: bool = Fals
         is_open = not is_open
         st.session_state[state_key] = is_open
     return is_open
+
+
+def inject_sidebar_delete_button_style() -> None:
+    components.html(
+        """
+        <script>
+          (function () {
+            function setImportant(el, prop, value) {
+              el.style.setProperty(prop, value, "important");
+            }
+
+            function applyDeleteStyle() {
+              try {
+                const doc = window.parent.document;
+                const sidebar = doc.querySelector('[data-testid="stSidebar"]');
+                if (!sidebar) {
+                  return;
+                }
+                const buttons = sidebar.querySelectorAll("button");
+                buttons.forEach((button) => {
+                  const text = (button.innerText || "").replace(/\\s+/g, " ").trim();
+                  if (!text.includes("Delete Uploaded Dataset")) {
+                    return;
+                  }
+
+                  const enabled = !button.disabled;
+                  if (enabled) {
+                    setImportant(button, "background", "#ffffff");
+                    setImportant(button, "border", "1px solid #9cbfdc");
+                    setImportant(button, "color", "#124a73");
+                  } else {
+                    setImportant(button, "background", "#e5edf5");
+                    setImportant(button, "border", "1px solid #c6d7e8");
+                    setImportant(button, "color", "#6b7f95");
+                  }
+                  setImportant(button, "border-radius", "10px");
+                  setImportant(button, "min-height", "40px");
+                  setImportant(button, "padding", "0.38rem 0.75rem");
+                  setImportant(button, "line-height", "1.2");
+                  setImportant(button, "font-weight", "650");
+                  setImportant(button, "box-shadow", "0 2px 8px rgba(18, 74, 115, 0.12)");
+                  setImportant(button, "-webkit-text-fill-color", enabled ? "#124a73" : "#6b7f95");
+
+                  button.querySelectorAll("*").forEach((node) => {
+                    setImportant(node, "color", enabled ? "#124a73" : "#6b7f95");
+                    setImportant(node, "-webkit-text-fill-color", enabled ? "#124a73" : "#6b7f95");
+                  });
+                });
+              } catch (_err) {}
+            }
+
+            applyDeleteStyle();
+            const observer = new MutationObserver(() => applyDeleteStyle());
+            observer.observe(window.parent.document.body, {
+              subtree: true,
+              childList: true,
+              attributes: true,
+            });
+          })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
+def dataset_option_map(dataset_options: list[DatasetOption]) -> dict[str, DatasetOption]:
+    return {item["key"]: item for item in dataset_options}
+
+
+def resolve_dataset_selection(dataset_options: list[DatasetOption]) -> str:
+    option_map = dataset_option_map(dataset_options)
+    selected_key = str(st.session_state.get("selected_dataset_key", DEFAULT_DATASET_KEY) or DEFAULT_DATASET_KEY)
+    if selected_key not in option_map:
+        selected_key = DEFAULT_DATASET_KEY if DEFAULT_DATASET_KEY in option_map else dataset_options[0]["key"]
+        st.session_state.selected_dataset_key = selected_key
+    return selected_key
+
+
+def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
+    dataset_options = discover_datasets(BENCHMARK_PATH, UPLOADED_DATASETS_DIR)
+    selected_key = resolve_dataset_selection(dataset_options)
+
+    if sidebar_collapsible_section("Dataset Config", "sidebar_dataset_config_open", default=False):
+        delete_notice = str(st.session_state.get("dataset_delete_notice", "") or "").strip()
+        if delete_notice:
+            delete_notice_level = str(st.session_state.get("dataset_delete_notice_level", "success") or "success")
+            if delete_notice_level == "info":
+                st.info(delete_notice)
+            else:
+                st.success(delete_notice)
+            st.session_state.dataset_delete_notice = ""
+            st.session_state.dataset_delete_notice_level = "success"
+        st.caption("Default benchmark set (TR) is selected by default.")
+        st.download_button(
+            label="Download Empty Dataset Template",
+            data=dataset_template_bytes(),
+            file_name="dataset_template.json",
+            mime="application/json",
+            use_container_width=False,
+        )
+        uploaded_files = st.file_uploader(
+            "Upload dataset JSON",
+            type=["json"],
+            accept_multiple_files=True,
+            key="dataset_config_upload_json",
+        )
+        if uploaded_files:
+            upload_signatures = sorted(
+                f"{uploaded_file.name}:{hashlib.sha256(uploaded_file.getvalue()).hexdigest()}"
+                for uploaded_file in uploaded_files
+            )
+            signature = "|".join(upload_signatures)
+            if signature != st.session_state.dataset_upload_signature:
+                success_count = 0
+                errors: list[str] = []
+                for uploaded_file in uploaded_files:
+                    try:
+                        save_uploaded_dataset(
+                            UPLOADED_DATASETS_DIR,
+                            uploaded_file.name,
+                            uploaded_file.getvalue(),
+                        )
+                        success_count += 1
+                    except Exception as exc:  # noqa: BLE001
+                        errors.append(f"{uploaded_file.name}: {exc}")
+                st.session_state.dataset_upload_signature = signature
+                if success_count:
+                    st.success(f"Uploaded {success_count} dataset file(s).")
+                for error in errors:
+                    st.error(error)
+                dataset_options = discover_datasets(BENCHMARK_PATH, UPLOADED_DATASETS_DIR)
+                selected_key = resolve_dataset_selection(dataset_options)
+        else:
+            st.session_state.dataset_upload_signature = ""
+
+        option_map = dataset_option_map(dataset_options)
+        option_keys = list(option_map.keys())
+        widget_key = "dataset_config_selected_dataset_widget"
+        if widget_key in st.session_state and st.session_state[widget_key] not in option_keys:
+            del st.session_state[widget_key]
+        selected_index = option_keys.index(selected_key) if selected_key in option_map else 0
+        selected_key = st.selectbox(
+            "Select dataset",
+            options=option_keys,
+            index=selected_index,
+            format_func=lambda item_key: option_map[item_key]["label"],
+            key=widget_key,
+        )
+        st.session_state.selected_dataset_key = selected_key
+        inject_sidebar_delete_button_style()
+
+        selected_option = option_map.get(selected_key)
+        if not selected_option:
+            return selected_key, dataset_options
+
+        if selected_option.get("is_default"):
+            st.caption("🔒 Default dataset cannot be deleted.")
+            st.button(
+                "Delete Uploaded Dataset",
+                key="dataset_delete_disabled_default",
+                use_container_width=True,
+                disabled=True,
+            )
+            st.caption("Select an uploaded dataset from the list to enable deletion.")
+            if st.session_state.dataset_delete_pending_key:
+                st.session_state.dataset_delete_pending_key = ""
+        else:
+            st.caption(f"Selected uploaded dataset: {selected_option['label']}")
+            pending_key = str(st.session_state.get("dataset_delete_pending_key", "") or "")
+            if pending_key and pending_key != selected_key:
+                st.session_state.dataset_delete_pending_key = ""
+                pending_key = ""
+
+            if not pending_key:
+                if st.button(
+                    "Delete Uploaded Dataset",
+                    key=f"dataset_delete_begin_{selected_key}",
+                    use_container_width=True,
+                ):
+                    st.session_state.dataset_delete_pending_key = selected_key
+                    st.rerun()
+            else:
+                st.warning(
+                    f"You are deleting: `{selected_option['label']}`.\n\n"
+                    "This permanently removes the uploaded dataset file and related generated artifacts "
+                    "(results JSON/Markdown + sidecar files). This cannot be undone."
+                )
+                confirm_col, cancel_col = st.columns(2)
+                if confirm_col.button(
+                    "Delete Permanently",
+                    key=f"dataset_delete_confirm_{selected_key}",
+                    use_container_width=True,
+                    type="primary",
+                ):
+                    try:
+                        summary: DatasetDeleteSummary = delete_uploaded_dataset_with_artifacts(
+                            dataset_option=selected_option,
+                            data_dir=DATA_DIR,
+                            root_dir=ROOT,
+                        )
+                    except ValueError as exc:
+                        st.error(str(exc))
+                    else:
+                        deleted_count = summary["deleted_count"]
+                        missing_count = summary["missing_count"]
+                        notice_level = "success" if deleted_count > 0 else "info"
+                        st.session_state.dataset_delete_notice = (
+                            f"Dataset deleted. Removed {deleted_count} artifact(s); "
+                            f"{missing_count} artifact(s) were already missing."
+                        )
+                        st.session_state.dataset_delete_notice_level = notice_level
+                        st.session_state.dataset_delete_pending_key = ""
+                        st.session_state.dataset_upload_signature = ""
+                        st.session_state.selected_dataset_key = DEFAULT_DATASET_KEY
+                        st.session_state.active_dataset_key = DEFAULT_DATASET_KEY
+                        reset_dataset_runtime_state()
+                        dataset_options = discover_datasets(BENCHMARK_PATH, UPLOADED_DATASETS_DIR)
+                        st.rerun()
+                if cancel_col.button(
+                    "Keep Dataset",
+                    key=f"dataset_delete_cancel_{selected_key}",
+                    use_container_width=True,
+                ):
+                    st.session_state.dataset_delete_pending_key = ""
+                    st.rerun()
+    return selected_key, dataset_options
 
 
 def pick_models(models: list[str]) -> tuple[list[str], bool]:
@@ -672,9 +1025,14 @@ def pick_models(models: list[str]) -> tuple[list[str], bool]:
     return active_models, run_eligible
 
 
-def render_question_meta(question: dict[str, Any], selected_models: list[str]) -> None:
+def render_question_meta(
+    question: dict[str, Any],
+    selected_models: list[str],
+    dataset_label: str = "-",
+) -> None:
     question_id = html_escape(str(question.get("id", "-")))
     category = html_escape(str(question.get("category", "GENERAL")))
+    dataset = html_escape(str(dataset_label).strip() or "-")
     model = html_escape(" | ".join(selected_models) or "-")
     hardness = html_escape(str(question.get("hardness_level", "")).strip() or "-")
     why_prepared = str(question.get("why_prepared", "")).strip()
@@ -682,9 +1040,10 @@ def render_question_meta(question: dict[str, Any], selected_models: list[str]) -
     st.markdown(
         f"""
         <div class="meta-wrap">
+          <span class="meta-chip meta-dataset">Dataset: {dataset}</span>
+          <span class="meta-chip meta-model">Selected model(s): {model}</span>
           <span class="meta-chip meta-id">Question: {question_id}</span>
           <span class="meta-chip meta-category">Category: {category}</span>
-          <span class="meta-chip meta-model">Selected model(s): {model}</span>
           <span class="meta-chip meta-hardness">Difficulty: {hardness}</span>
         </div>
         """,
@@ -823,8 +1182,7 @@ def render_response_content(response_text: str, view_mode: str, key: str) -> Non
         return
 
     if not value.strip():
-        if render_empty_widget_key not in st.session_state:
-            st.session_state[render_empty_widget_key] = ""
+        st.session_state[render_empty_widget_key] = ""
         st.text_area(
             "Response",
             height=240,
@@ -915,10 +1273,25 @@ def persist_result_record(
     results: list[dict[str, Any]],
     questions: list[dict[str, Any]],
     record: dict[str, Any],
+    dataset_key: str,
+    dataset_signature: str,
+    results_path: Path,
+    results_md_path: Path,
 ) -> list[dict[str, Any]]:
-    updated = upsert_result(results, record)
-    save_results(RESULTS_PATH, updated)
-    render_results_markdown(questions=questions, results=updated, output_path=RESULTS_MD_PATH)
+    normalized = dict(record)
+    normalized["dataset_key"] = dataset_key
+    normalized["dataset_signature"] = dataset_signature
+    question_id = str(normalized.get("question_id", "") or "")
+    if not str(normalized.get("question_prompt_hash", "") or "").strip() and question_id:
+        question_prompt = next(
+            (str(question.get("prompt", "")) for question in questions if str(question.get("id", "")) == question_id),
+            "",
+        )
+        if question_prompt:
+            normalized["question_prompt_hash"] = hashlib.sha256(question_prompt.encode("utf-8")).hexdigest()[:16]
+    updated = upsert_result(results, normalized)
+    save_results(results_path, updated)
+    render_results_markdown(questions=questions, results=updated, output_path=results_md_path)
     return updated
 
 
@@ -945,7 +1318,7 @@ def build_verdict(entry: dict[str, Any], expected_answer: str) -> dict[str, Any]
             "status": "manual_review",
             "score": None,
             "auto_scored": False,
-            "reason": f"Hata: {entry['error']}",
+            "reason": f"Error: {entry['error']}",
         }
     return evaluate_response(expected_answer=expected_answer, response=response)
 
@@ -955,11 +1328,28 @@ def handle_completed_runs(
     results: list[dict[str, Any]],
     questions: list[dict[str, Any]],
     question_by_id: dict[str, dict[str, Any]],
+    dataset_key: str,
+    dataset_signature: str,
+    results_path: Path,
+    results_md_path: Path,
 ) -> list[dict[str, Any]]:
     run_id = snapshot["run_id"]
     if run_id == 0:
         return results
     if not snapshot.get("entries"):
+        return results
+    run_dataset_key = str(st.session_state.get("active_run_dataset_key", "") or "")
+    run_question_id = str(st.session_state.get("active_run_question_id", "") or "")
+    run_prompt = str(st.session_state.get("active_run_prompt", "") or "")
+    snapshot_question_id = str(snapshot.get("question_id", "") or "")
+    snapshot_prompt = str(snapshot.get("prompt", "") or "")
+    if not run_dataset_key:
+        return results
+    if run_dataset_key != dataset_key:
+        return results
+    if run_question_id and run_question_id != snapshot_question_id:
+        return results
+    if run_prompt and run_prompt != snapshot_prompt:
         return results
 
     question = question_by_id.get(snapshot["question_id"])
@@ -974,6 +1364,9 @@ def handle_completed_runs(
             continue
         verdict = build_verdict(entry, expected_answer)
         record = {
+            "dataset_key": dataset_key,
+            "dataset_signature": dataset_signature,
+            "question_prompt_hash": hashlib.sha256(snapshot_prompt.encode("utf-8")).hexdigest()[:16],
             "question_id": snapshot["question_id"],
             "model": entry["model"],
             "response": str(entry.get("response", "")),
@@ -985,11 +1378,101 @@ def handle_completed_runs(
             "auto_scored": bool(verdict.get("auto_scored")),
             "reason": verdict.get("reason", ""),
         }
-        results = persist_result_record(results, questions, record)
+        results = persist_result_record(
+            results,
+            questions,
+            record,
+            dataset_key,
+            dataset_signature,
+            results_path,
+            results_md_path,
+        )
         persisted_keys.add(persist_key)
 
     st.session_state.persisted_run_entry_keys = sorted(persisted_keys)
     return results
+
+
+def filter_results_for_dataset(
+    results: list[dict[str, Any]],
+    dataset_key: str,
+    dataset_signature: str,
+    prompt_hash_by_question_id: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    prompt_hash_by_question_id = prompt_hash_by_question_id or {}
+    if dataset_key == DEFAULT_DATASET_KEY:
+        # Backward-compatible default dataset view:
+        # include legacy rows that were saved before dataset metadata existed.
+        return [
+            item
+            for item in results
+            if str(item.get("dataset_key", "") or "").strip() in {"", DEFAULT_DATASET_KEY}
+        ]
+
+    filtered = [
+        item
+        for item in results
+        if str(item.get("dataset_key", "")) == dataset_key
+        and str(item.get("dataset_signature", "")) == dataset_signature
+    ]
+
+    compatible: list[dict[str, Any]] = []
+    for item in filtered:
+        question_id = str(item.get("question_id", "") or "")
+        expected_prompt_hash = prompt_hash_by_question_id.get(question_id, "")
+        if not expected_prompt_hash:
+            continue
+        if str(item.get("question_prompt_hash", "")) == expected_prompt_hash:
+            compatible.append(item)
+    return compatible
+
+
+def sanitize_dataset_results(
+    raw_results: list[dict[str, Any]],
+    filtered_results: list[dict[str, Any]],
+    dataset_key: str,
+    questions: list[dict[str, Any]],
+    results_path: Path,
+    results_md_path: Path,
+) -> list[dict[str, Any]]:
+    if dataset_key == DEFAULT_DATASET_KEY:
+        return filtered_results
+    if len(raw_results) == len(filtered_results):
+        return filtered_results
+    save_results(results_path, filtered_results)
+    render_results_markdown(questions=questions, results=filtered_results, output_path=results_md_path)
+    return filtered_results
+
+
+def backfill_default_results_metadata(
+    results: list[dict[str, Any]],
+    dataset_signature: str,
+    prompt_hash_by_question_id: dict[str, str],
+) -> tuple[list[dict[str, Any]], bool]:
+    changed = False
+    normalized_results: list[dict[str, Any]] = []
+    for item in results:
+        row = dict(item)
+        row_dataset_key = str(row.get("dataset_key", "") or "").strip()
+        if row_dataset_key and row_dataset_key != DEFAULT_DATASET_KEY:
+            normalized_results.append(row)
+            continue
+
+        if row_dataset_key != DEFAULT_DATASET_KEY:
+            row["dataset_key"] = DEFAULT_DATASET_KEY
+            changed = True
+        if not str(row.get("dataset_signature", "") or "").strip():
+            row["dataset_signature"] = dataset_signature
+            changed = True
+
+        question_id = str(row.get("question_id", "") or "")
+        expected_prompt_hash = prompt_hash_by_question_id.get(question_id, "")
+        if expected_prompt_hash and not str(row.get("question_prompt_hash", "") or "").strip():
+            row["question_prompt_hash"] = expected_prompt_hash
+            changed = True
+
+        normalized_results.append(row)
+    return normalized_results, changed
 
 
 def render_metrics_panel(results: list[dict[str, Any]]) -> None:
@@ -1301,11 +1784,25 @@ def render() -> None:
         )
         usage_mode_info = st.empty()
         selected_models_info = st.empty()
+        selected_dataset_info = st.empty()
         total_questions_info = st.empty()
         tested_model_count_info = st.empty()
+        selected_dataset_key, dataset_options = render_dataset_config_sidebar()
+
+    dataset_options_by_key = dataset_option_map(dataset_options)
+    if selected_dataset_key not in dataset_options_by_key:
+        selected_dataset_key = resolve_dataset_selection(dataset_options)
+    active_dataset = dataset_options_by_key[selected_dataset_key]
+    active_dataset_path = active_dataset["path"]
+    active_dataset_signature = compute_dataset_signature(active_dataset_path)
+    results_path, results_md_path = resolve_results_paths(selected_dataset_key, DATA_DIR, ROOT)
+
+    if st.session_state.active_dataset_key != selected_dataset_key:
+        st.session_state.active_dataset_key = selected_dataset_key
+        reset_dataset_runtime_state()
 
     try:
-        payload = ensure_dataset()
+        payload = ensure_dataset(active_dataset_path)
     except (FileNotFoundError, DatasetValidationError) as exc:
         st.error(str(exc))
         return
@@ -1318,10 +1815,37 @@ def render() -> None:
         st.error("No questions found. Check data/benchmark.json content.")
         return
 
-    if not RESULTS_PATH.exists():
-        save_results(RESULTS_PATH, [])
-        render_results_markdown(questions=questions, results=[], output_path=RESULTS_MD_PATH)
-    results = load_results(RESULTS_PATH)
+    if not results_path.exists():
+        save_results(results_path, [])
+        render_results_markdown(questions=questions, results=[], output_path=results_md_path)
+    prompt_hash_by_question_id = {
+        str(item.get("id", "")): hashlib.sha256(str(item.get("prompt", "")).encode("utf-8")).hexdigest()[:16]
+        for item in questions
+    }
+    raw_results = load_results(results_path)
+    if selected_dataset_key == DEFAULT_DATASET_KEY:
+        raw_results, migrated = backfill_default_results_metadata(
+            raw_results,
+            active_dataset_signature,
+            prompt_hash_by_question_id,
+        )
+        if migrated:
+            save_results(results_path, raw_results)
+            render_results_markdown(questions=questions, results=raw_results, output_path=results_md_path)
+    results = filter_results_for_dataset(
+        raw_results,
+        selected_dataset_key,
+        active_dataset_signature,
+        prompt_hash_by_question_id,
+    )
+    results = sanitize_dataset_results(
+        raw_results,
+        results,
+        selected_dataset_key,
+        questions,
+        results_path,
+        results_md_path,
+    )
 
     with st.sidebar:
         if not st.session_state.model_cache and api_ok:
@@ -1335,12 +1859,17 @@ def render() -> None:
         selected_models_lines = active_models if active_models else ["-"]
         selected_models_lines_html = "<br>".join(html_escape(model) for model in selected_models_lines)
         tested_model_count = len({r.get("model") for r in results if r.get("model")})
+        download_stem = "results" if selected_dataset_key == DEFAULT_DATASET_KEY else f"results_{selected_dataset_key}"
         usage_mode_info.markdown(
             f"🎯 Usage Mode: <strong>{html_escape(mode_label)}</strong>",
             unsafe_allow_html=True,
         )
         selected_models_info.markdown(
             f"🧠 Selected Model(s):<br><strong>{selected_models_lines_html}</strong>",
+            unsafe_allow_html=True,
+        )
+        selected_dataset_info.markdown(
+            f"🗂️ Selected Dataset: <strong>{html_escape(str(active_dataset.get('label', '-')))}</strong>",
             unsafe_allow_html=True,
         )
         total_questions_info.markdown(
@@ -1383,7 +1912,7 @@ def render() -> None:
                 st.download_button(
                     label="Download JSON",
                     data=json_bytes,
-                    file_name="results.json",
+                    file_name=f"{download_stem}.json",
                     mime="application/json",
                     use_container_width=False,
                     disabled=not results,
@@ -1392,7 +1921,7 @@ def render() -> None:
                 st.download_button(
                     label="Download Excel",
                     data=excel_bytes,
-                    file_name="results.xlsx",
+                    file_name=f"{download_stem}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=False,
                     disabled=excel_download_disabled,
@@ -1407,14 +1936,18 @@ def render() -> None:
             st.markdown(
                 """
 1. Set a valid `OLLAMA_API_KEY` to enable model access.
-2. Check current run context under `Status` (`Usage Mode`, `Selected Model(s)`, `Total questions`, `Tested model count`).
-3. Open `Benchmark Config` and choose `Usage Mode`: `Single model` or `Comparison (2 models)`.
-4. Select model(s). In comparison mode, Model 1 and Model 2 must be set and different.
-5. Click `Start Response` or `Start Responses` to run benchmark generation.
-6. Read outputs in `Plain text` or `Render (MD/HTML)` view.
-7. If needed, override automatic scoring with `Successful`, `Failed`, or `Needs Review`.
-8. Open `Download Results`, choose `JSON` or `Excel`, and download the selected format.
-9. Final outputs are saved to `data/results.json` and `results.md`.
+2. Open `Dataset Config` to download the empty template and upload JSON dataset file(s).
+3. Select active dataset from the dataset dropdown.
+4. To delete an uploaded dataset: select it first, click `Delete Uploaded Dataset`, then confirm; default dataset cannot be deleted.
+5. Deleting an uploaded dataset removes its dataset file and dataset-specific artifacts in `data/results_by_dataset/` (JSON/Markdown and sidecar files).
+6. Check run context under `Status` (`API key status`, `Usage Mode`, `Selected Model(s)`, `Selected Dataset`, `Total questions`, `Tested model count`).
+7. Open `Benchmark Config` and choose `Usage Mode`: `Single model` or `Comparison (2 models)`.
+8. Select model(s). In comparison mode, Model 1 and Model 2 must be set and different.
+9. Click `Start Response` or `Start Responses` to run benchmark generation.
+10. Read outputs in `Plain text` or `Render (MD/HTML)` view.
+11. If needed, override automatic scoring with `Successful`, `Failed`, or `Needs Review`.
+12. Open `Download Results`, choose `JSON` or `Excel`, and download the selected format.
+13. Final outputs are saved per selected dataset (default keeps `data/results.json` + `results.md`, uploaded datasets use `data/results_by_dataset/`).
                 """
             )
             st.markdown(
@@ -1466,7 +1999,11 @@ def render() -> None:
             st.session_state.question_index = min(len(questions) - 1, idx + 1)
             st.rerun()
 
-    render_question_meta(question=question, selected_models=active_models)
+    render_question_meta(
+        question=question,
+        selected_models=active_models,
+        dataset_label=str(active_dataset.get("label", "-")),
+    )
     st.text_area(
         "Question",
         value=question["prompt"],
@@ -1492,7 +2029,6 @@ def render() -> None:
             use_container_width=True,
             disabled=(not run_eligible) or snapshot["running"],
         ):
-            st.session_state.persisted_run_entry_keys = []
             ok = runner.start(
                 models=active_models,
                 question_id=question["id"],
@@ -1501,6 +2037,10 @@ def render() -> None:
             )
             if not ok:
                 st.warning("A run is already active.")
+            else:
+                st.session_state.active_run_dataset_key = selected_dataset_key
+                st.session_state.active_run_question_id = question["id"]
+                st.session_state.active_run_prompt = question["prompt"]
             st.rerun()
     with stop_col:
         if st.button(
@@ -1515,6 +2055,10 @@ def render() -> None:
         results=results,
         questions=questions,
         question_by_id=question_by_id,
+        dataset_key=selected_dataset_key,
+        dataset_signature=active_dataset_signature,
+        results_path=results_path,
+        results_md_path=results_md_path,
     )
     if not run_eligible:
         st.session_state.pending_autorun = None
@@ -1531,7 +2075,6 @@ def render() -> None:
             if not pending_models:
                 st.session_state.pending_autorun = None
             elif not snapshot["running"]:
-                st.session_state.persisted_run_entry_keys = []
                 started = runner.start(
                     models=pending_models,
                     question_id=question["id"],
@@ -1539,6 +2082,9 @@ def render() -> None:
                     system_prompt=st.session_state.system_prompt,
                 )
                 if started:
+                    st.session_state.active_run_dataset_key = selected_dataset_key
+                    st.session_state.active_run_question_id = question["id"]
+                    st.session_state.active_run_prompt = question["prompt"]
                     st.session_state.pending_autorun = None
                     st.rerun()
 
@@ -1574,7 +2120,12 @@ def render() -> None:
     response_columns = st.columns(len(panel_models)) if len(panel_models) > 1 else [st.container()]
     for panel_index, model in enumerate(panel_models):
         with response_columns[panel_index]:
-            active_entry = find_snapshot_entry(snapshot, question["id"], model) if model else None
+            response_scope_key = f"{selected_dataset_key}_{question['id']}"
+            active_entry = (
+                find_snapshot_entry(snapshot, question["id"], model)
+                if model and snapshot.get("running")
+                else None
+            )
             saved = find_result(results, question["id"], model) if model else None
             display_latency_s: float | None = None
             if active_entry:
@@ -1587,15 +2138,15 @@ def render() -> None:
                 response_header += f" | Response time: {display_latency_s:.2f}s"
 
             copy_response = ""
-            copy_key = f"resp_none_{question['id']}_{panel_index}"
+            copy_key = f"resp_none_{response_scope_key}_{panel_index}"
             copy_disabled = True
             if active_entry:
                 copy_response = str(active_entry.get("response", ""))
-                copy_key = f"live_{question['id']}_{model}"
+                copy_key = f"live_{response_scope_key}_{model}"
                 copy_disabled = bool(active_entry.get("running"))
             elif saved:
                 copy_response = str(saved.get("response", ""))
-                copy_key = f"saved_{question['id']}_{model}"
+                copy_key = f"saved_{response_scope_key}_{model}"
                 copy_disabled = False
 
             header_col, copy_col = st.columns([6, 1])
@@ -1613,7 +2164,7 @@ def render() -> None:
                 render_response_content(
                     response_text=live_response,
                     view_mode=response_view_mode,
-                    key=f"response_live_{question['id']}_{model}",
+                    key=f"response_live_{response_scope_key}_{model}",
                 )
                 if not live_response.strip():
                     if active_entry.get("completed"):
@@ -1635,7 +2186,7 @@ def render() -> None:
                 render_response_content(
                     response_text=saved_response,
                     view_mode=response_view_mode,
-                    key=f"response_saved_{question['id']}_{model}",
+                    key=f"response_saved_{response_scope_key}_{model}",
                 )
                 if not saved_response.strip():
                     st.warning("Model response is empty in this record.")
@@ -1644,7 +2195,7 @@ def render() -> None:
                 render_response_content(
                     response_text="",
                     view_mode=response_view_mode,
-                    key=f"response_empty_{question['id']}_{panel_index}",
+                    key=f"response_empty_{response_scope_key}_{panel_index}",
                 )
                 if model:
                     st.info("No record yet for the selected model.")
@@ -1671,7 +2222,15 @@ def render() -> None:
                 updated["reason"] = "User approval"
                 updated["interrupted"] = False
                 updated["timestamp"] = datetime.now(timezone.utc).isoformat()
-                results = persist_result_record(results, questions, updated)
+                results = persist_result_record(
+                    results,
+                    questions,
+                    updated,
+                    selected_dataset_key,
+                    active_dataset_signature,
+                    results_path,
+                    results_md_path,
+                )
                 st.rerun()
             if c2.button(
                 "Failed",
@@ -1686,7 +2245,15 @@ def render() -> None:
                 updated["reason"] = "User approval"
                 updated["interrupted"] = False
                 updated["timestamp"] = datetime.now(timezone.utc).isoformat()
-                results = persist_result_record(results, questions, updated)
+                results = persist_result_record(
+                    results,
+                    questions,
+                    updated,
+                    selected_dataset_key,
+                    active_dataset_signature,
+                    results_path,
+                    results_md_path,
+                )
                 st.rerun()
             if c3.button(
                 "Needs Review",
@@ -1700,7 +2267,15 @@ def render() -> None:
                 updated["auto_scored"] = False
                 updated["reason"] = "Marked by user for manual review"
                 updated["timestamp"] = datetime.now(timezone.utc).isoformat()
-                results = persist_result_record(results, questions, updated)
+                results = persist_result_record(
+                    results,
+                    questions,
+                    updated,
+                    selected_dataset_key,
+                    active_dataset_signature,
+                    results_path,
+                    results_md_path,
+                )
                 st.rerun()
 
     render_metrics_panel(results)

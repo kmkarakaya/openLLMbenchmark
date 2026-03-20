@@ -36,14 +36,14 @@ def evaluate_response(expected_answer: str, response: str) -> dict[str, Any]:
             "status": "manual_review",
             "score": None,
             "auto_scored": False,
-            "reason": "Beklenen cevap boş.",
+            "reason": "Expected answer is empty.",
         }
     if not model_response:
         return {
             "status": "fail",
             "score": 0,
             "auto_scored": True,
-            "reason": "Boş model yanıtı.",
+            "reason": "Empty model response.",
         }
 
     expected_number = extract_first_number(expected)
@@ -55,7 +55,7 @@ def evaluate_response(expected_answer: str, response: str) -> dict[str, Any]:
             "status": "success" if ok else "fail",
             "score": 1 if ok else 0,
             "auto_scored": True,
-            "reason": "Sayısal karşılaştırma yapıldı.",
+            "reason": "Numeric comparison applied.",
         }
 
     similarity = fuzz.token_set_ratio(normalize_text(expected), normalize_text(model_response))
@@ -64,5 +64,5 @@ def evaluate_response(expected_answer: str, response: str) -> dict[str, Any]:
         "status": "success" if ok else "fail",
         "score": 1 if ok else 0,
         "auto_scored": True,
-        "reason": f"Metin benzerliği: {similarity:.1f}",
+        "reason": f"Text similarity: {similarity:.1f}",
     }

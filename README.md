@@ -92,19 +92,30 @@ If `OLLAMA_API_KEY` is missing at startup, the app asks for it via masked input 
 
 ## Runtime Outputs
 
+- Default dataset outputs:
 - `data/results.json`: canonical run results
 - `results.md`: auto-generated comparison report (scores + latency + question matrix)
+- Uploaded dataset outputs:
+- `data/results_by_dataset/<dataset_key>.json`: dataset-specific run results
+- `data/results_by_dataset/<dataset_key>.md`: dataset-specific markdown report
+- Uploaded dataset files:
+- `data/uploaded_datasets/*.json`: validated user-uploaded datasets
 
 ## Current UI Behavior
 
-- Sidebar groups: `Status`, `Benchmark Config`, `Download Results`, `Quick User Manual`.
-- `Status` shows dynamic run context: API key status, usage mode, selected model(s), total questions, tested model count.
+- Sidebar groups: `Status`, `Dataset Config`, `Benchmark Config`, `Download Results`, `Quick User Manual`.
+- `Status` shows dynamic run context: API key status, usage mode, selected model(s), selected dataset, total questions, tested model count.
+- `Dataset Config` lets users download an empty template, upload JSON datasets, select active dataset, and delete uploaded datasets with a two-step confirmation (`Delete Uploaded Dataset` -> `Delete Permanently`).
+- Default dataset cannot be deleted.
+- Deleting an uploaded dataset removes only dataset-specific artifacts (`data/uploaded_datasets/<file>.json` and matching `data/results_by_dataset/<dataset_key>.json|.md` + sidecars).
 - Usage modes: `Single model` and `Comparison (2 models)`.
 - `Benchmark Config` contains both usage mode and model selection controls.
+- Question metadata pills include: dataset, selected model(s), question id, category, difficulty.
 - Response view modes: `Plain text` and `Render (MD/HTML)`.
 - In comparison mode, both models must be set and different.
 - Model 2 value is preserved when switching modes.
-- `Download Results` lets you choose format (`JSON` / `Excel`) and download the selected format.
+- `Download Results` lets you choose format (`JSON` / `Excel`) and download the selected format (`results.json` for default dataset, `results_<dataset_key>.*` for uploaded datasets).
+- Scoring `reason` values in exported results are standardized in English (for example: `Numeric comparison applied.`, `Text similarity: ...`).
 - `Copy` is disabled while generation is active or when response text is empty.
 - `Stop` marks interrupted runs as `manual_review`.
 
