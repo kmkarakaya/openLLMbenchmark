@@ -93,6 +93,20 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Local Automation Helper (Windows)
+
+Use `devops_helper.bat` from the repo root:
+
+```bat
+devops_helper github "your commit message"
+devops_helper hf
+devops_helper all "your commit message"
+```
+
+- `github`: stages all changes, commits, pushes to `origin/current-branch`
+- `hf`: creates a clean temp snapshot and deploys to Hugging Face Space
+- `all`: runs `github` then `hf`
+
 ## Deploy on Hugging Face Spaces (Docker)
 
 This repository is ready to run as a Docker Space with the included `Dockerfile`.
