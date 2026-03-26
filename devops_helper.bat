@@ -114,15 +114,16 @@ mkdir "%TMP_DIR%" || (
   exit /b 1
 )
 
-robocopy "%REPO_ROOT%" "%TMP_DIR%" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP ^
-  /XD ".git" ".pytest_cache" "__pycache__" ".venv" "venv" "env" "image\README" ^
-  /XF "*.pyc" "*.pyo" "*.pyd" "*.log" "_debug_sidebar*.png" "*.docx" >nul
-set "ROBO_EXIT=%ERRORLEVEL%"
-if %ROBO_EXIT% GEQ 8 (
-  echo [ERROR] Failed to prepare temp snapshot. robocopy exit=%ROBO_EXIT%.
+git checkout-index -a -f --prefix="%TMP_DIR%\\" >nul
+if errorlevel 1 (
+  echo [ERROR] Failed to export tracked files with git checkout-index.
   set "EXIT_CODE=1"
   goto :cleanup
 )
+
+if exist "%TMP_DIR%\image\README" rmdir /s /q "%TMP_DIR%\image\README"
+for %%F in ("%TMP_DIR%\_debug_sidebar*.png") do if exist "%%~fF" del /f /q "%%~fF"
+for /r "%TMP_DIR%" %%F in (*.docx) do del /f /q "%%~fF"
 
 pushd "%TMP_DIR%" || (
   echo [ERROR] Could not enter temp directory.
