@@ -44,7 +44,7 @@ from mode_selection import (
     update_pair_model_backup,
 )
 from runner import get_runner
-from scoring import evaluate_response
+from scoring import evaluate_response, normalize_reason_text
 from storage import (
     compute_model_metrics,
     format_cell,
@@ -1289,6 +1289,7 @@ def persist_result_record(
         )
         if question_prompt:
             normalized["question_prompt_hash"] = hashlib.sha256(question_prompt.encode("utf-8")).hexdigest()[:16]
+    normalized["reason"] = normalize_reason_text(str(normalized.get("reason", "") or ""))
     updated = upsert_result(results, normalized)
     save_results(results_path, updated)
     render_results_markdown(questions=questions, results=updated, output_path=results_md_path)
@@ -1442,6 +1443,20 @@ def sanitize_dataset_results(
     save_results(results_path, filtered_results)
     render_results_markdown(questions=questions, results=filtered_results, output_path=results_md_path)
     return filtered_results
+
+
+def normalize_result_reason_records(results: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], bool]:
+    changed = False
+    normalized_rows: list[dict[str, Any]] = []
+    for item in results:
+        row = dict(item)
+        original_reason = str(row.get("reason", "") or "")
+        normalized_reason = normalize_reason_text(original_reason)
+        if normalized_reason != original_reason:
+            row["reason"] = normalized_reason
+            changed = True
+        normalized_rows.append(row)
+    return normalized_rows, changed
 
 
 def backfill_default_results_metadata(
@@ -1846,6 +1861,10 @@ def render() -> None:
         results_path,
         results_md_path,
     )
+    results, reason_normalized = normalize_result_reason_records(results)
+    if reason_normalized:
+        save_results(results_path, results)
+        render_results_markdown(questions=questions, results=results, output_path=results_md_path)
 
     with st.sidebar:
         if not st.session_state.model_cache and api_ok:

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import math
 import re
@@ -28,6 +28,42 @@ def extract_first_number(value: str) -> float | None:
         return None
 
 
+def normalize_reason_text(reason: str) -> str:
+    raw = (reason or "").strip()
+    if not raw:
+        return raw
+
+    lower = raw.lower()
+
+    if lower.startswith("hata:") or lower.startswith("error:"):
+        return f"Error: {raw.split(':', 1)[1].strip()}" if ":" in raw else "Error"
+
+    if lower == "expected answer is empty." or ("beklenen" in lower and "cevap" in lower and "bo" in lower):
+        return "Expected answer is empty."
+
+    if lower == "empty model response." or (
+        "model" in lower
+        and ("yanıt" in lower or "yanit" in lower or "response" in lower)
+        and ("bo" in lower or "empty" in lower)
+    ):
+        return "Empty model response."
+
+    if "numeric comparison applied" in lower or ("say" in lower and "kar" in lower and "yap" in lower):
+        return "Numeric comparison applied."
+
+    if lower.startswith("text similarity") or lower.startswith("metin benzerli"):
+        suffix = raw.split(":", 1)[1].strip() if ":" in raw else ""
+        return f"Text similarity: {suffix}" if suffix else "Text similarity."
+
+    if lower == "user approval" or ("kullan" in lower and "onay" in lower):
+        return "User approval"
+
+    if "durdur" in lower or "stopped by user" in lower:
+        return "Stopped by user."
+
+    return raw
+
+
 def evaluate_response(expected_answer: str, response: str) -> dict[str, Any]:
     expected = (expected_answer or "").strip()
     model_response = (response or "").strip()
@@ -36,14 +72,14 @@ def evaluate_response(expected_answer: str, response: str) -> dict[str, Any]:
             "status": "manual_review",
             "score": None,
             "auto_scored": False,
-            "reason": "Expected answer is empty.",
+            "reason": normalize_reason_text("Expected answer is empty."),
         }
     if not model_response:
         return {
             "status": "fail",
             "score": 0,
             "auto_scored": True,
-            "reason": "Empty model response.",
+            "reason": normalize_reason_text("Empty model response."),
         }
 
     expected_number = extract_first_number(expected)
@@ -55,7 +91,7 @@ def evaluate_response(expected_answer: str, response: str) -> dict[str, Any]:
             "status": "success" if ok else "fail",
             "score": 1 if ok else 0,
             "auto_scored": True,
-            "reason": "Numeric comparison applied.",
+            "reason": normalize_reason_text("Numeric comparison applied."),
         }
 
     similarity = fuzz.token_set_ratio(normalize_text(expected), normalize_text(model_response))
@@ -64,5 +100,5 @@ def evaluate_response(expected_answer: str, response: str) -> dict[str, Any]:
         "status": "success" if ok else "fail",
         "score": 1 if ok else 0,
         "auto_scored": True,
-        "reason": f"Text similarity: {similarity:.1f}",
+        "reason": normalize_reason_text(f"Text similarity: {similarity:.1f}"),
     }
