@@ -1,4 +1,14 @@
-﻿# Open LLM Benchmark (Web App)
+﻿---
+title: openLLMbenchmark
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
+# Open LLM Benchmark (Web App)
 
 A Streamlit web app to benchmark open LLMs on Ollama Cloud using any question/answer dataset.
 
@@ -162,3 +172,4 @@ Rules:
 - Keep existing IDs unchanged.
 - Add new IDs in `qNNN` format.
 - Fill required fields for each question.
+
