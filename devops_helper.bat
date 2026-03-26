@@ -119,7 +119,7 @@ robocopy "%REPO_ROOT%" "%TMP_DIR%" /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP ^
   /XF "*.pyc" "*.pyo" "*.pyd" "*.log" "_debug_sidebar*.png" "*.docx" >nul
 set "ROBO_EXIT=%ERRORLEVEL%"
 if %ROBO_EXIT% GEQ 8 (
-  echo [ERROR] Failed to prepare temp snapshot (robocopy exit=%ROBO_EXIT%).
+  echo [ERROR] Failed to prepare temp snapshot. robocopy exit=%ROBO_EXIT%.
   set "EXIT_CODE=1"
   goto :cleanup
 )
@@ -144,7 +144,7 @@ git add . || (
   set "EXIT_CODE=1"
   goto :cleanup
 )
-git commit -m "HF Space deploy from %CURRENT_BRANCH% (%SOURCE_SHA%)" >nul || (
+git commit -m "HF Space deploy from %CURRENT_BRANCH% - %SOURCE_SHA%" >nul || (
   echo [ERROR] git commit failed in temp snapshot.
   popd
   set "EXIT_CODE=1"

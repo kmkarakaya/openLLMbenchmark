@@ -98,9 +98,9 @@ streamlit run app.py
 Use `devops_helper.bat` from the repo root:
 
 ```bat
-devops_helper github "your commit message"
-devops_helper hf
-devops_helper all "your commit message"
+.\devops_helper.bat github "your commit message"
+.\devops_helper.bat hf
+.\devops_helper.bat all "your commit message"
 ```
 
 - `github`: stages all changes, commits, pushes to `origin/current-branch`
