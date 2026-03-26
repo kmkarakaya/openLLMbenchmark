@@ -83,6 +83,21 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## Deploy on Hugging Face Spaces (Docker)
+
+This repository is ready to run as a Docker Space with the included `Dockerfile`.
+
+1. Create a new Space on Hugging Face and select `Docker` as SDK.
+2. Push this repository to that Space.
+3. In Space `Settings -> Variables and secrets`, add:
+- `OLLAMA_API_KEY` (required)
+- `OLLAMA_HOST` (optional, default: `https://ollama.com`)
+4. Trigger a rebuild (or push a new commit). The app will start on port `7860` automatically.
+
+Notes:
+- The container runs `streamlit run app.py --server.address=0.0.0.0 --server.port=7860`.
+- If `OLLAMA_API_KEY` is not configured as a Space secret, the app asks it in the UI at runtime.
+
 ## Environment Variables
 
 - `OLLAMA_API_KEY` (required)
