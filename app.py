@@ -15,6 +15,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+from config import get_feature_flags
 from data.benchmark import (
     DEFAULT_SYSTEM_PROMPT,
     DatasetValidationError,
@@ -1278,6 +1279,8 @@ def persist_result_record(
     results_path: Path,
     results_md_path: Path,
 ) -> list[dict[str, Any]]:
+    if get_feature_flags().api_writes:
+        return results
     normalized = dict(record)
     normalized["dataset_key"] = dataset_key
     normalized["dataset_signature"] = dataset_signature
@@ -1436,6 +1439,8 @@ def sanitize_dataset_results(
     results_path: Path,
     results_md_path: Path,
 ) -> list[dict[str, Any]]:
+    if get_feature_flags().api_writes:
+        return filtered_results
     if dataset_key == DEFAULT_DATASET_KEY:
         return filtered_results
     if len(raw_results) == len(filtered_results):
@@ -1732,6 +1737,7 @@ def render_dataset_metadata_stats_panel(questions: list[dict[str, Any]]) -> None
 def render() -> None:
     init_page()
     init_state()
+    feature_flags = get_feature_flags()
 
     st.markdown(
         '<div class="page-main-title">Open LLM Benchmark</div>',
@@ -1830,7 +1836,7 @@ def render() -> None:
         st.error("No questions found. Check data/benchmark.json content.")
         return
 
-    if not results_path.exists():
+    if not results_path.exists() and not feature_flags.api_writes:
         save_results(results_path, [])
         render_results_markdown(questions=questions, results=[], output_path=results_md_path)
     prompt_hash_by_question_id = {
@@ -1844,7 +1850,7 @@ def render() -> None:
             active_dataset_signature,
             prompt_hash_by_question_id,
         )
-        if migrated:
+        if migrated and not feature_flags.api_writes:
             save_results(results_path, raw_results)
             render_results_markdown(questions=questions, results=raw_results, output_path=results_md_path)
     results = filter_results_for_dataset(
@@ -1862,7 +1868,7 @@ def render() -> None:
         results_md_path,
     )
     results, reason_normalized = normalize_result_reason_records(results)
-    if reason_normalized:
+    if reason_normalized and not feature_flags.api_writes:
         save_results(results_path, results)
         render_results_markdown(questions=questions, results=results, output_path=results_md_path)
 
@@ -2053,6 +2059,9 @@ def render() -> None:
                 question_id=question["id"],
                 prompt=question["prompt"],
                 system_prompt=st.session_state.system_prompt,
+                session_id=st.session_state.session_id,
+                dataset_key=selected_dataset_key,
+                trace_id=uuid.uuid4().hex,
             )
             if not ok:
                 st.warning("A run is already active.")
@@ -2099,6 +2108,9 @@ def render() -> None:
                     question_id=question["id"],
                     prompt=question["prompt"],
                     system_prompt=st.session_state.system_prompt,
+                    session_id=st.session_state.session_id,
+                    dataset_key=selected_dataset_key,
+                    trace_id=uuid.uuid4().hex,
                 )
                 if started:
                     st.session_state.active_run_dataset_key = selected_dataset_key
@@ -2308,4 +2320,3 @@ def render() -> None:
 
 if __name__ == "__main__":
     render()
-
