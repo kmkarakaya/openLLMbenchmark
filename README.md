@@ -126,8 +126,18 @@ Notes:
 
 - `OLLAMA_API_KEY` (required)
 - `OLLAMA_HOST` (optional, default: `https://ollama.com`)
+- `API_BASE_URL` (for upcoming v1 API/Next.js integration)
+- `FEATURE_API_READS` (default: `true`)
+- `FEATURE_API_RUNS` (default: `false`)
+- `FEATURE_API_WRITES` (default: `false`)
+- `FEATURE_NEW_UI` (default: `false`)
 
 If `OLLAMA_API_KEY` is missing at startup, the app asks for it via masked input in the UI.
+
+## Version 2 Baseline Fixtures
+
+- Baseline snapshots are stored in `data/baselines/results.json` and `data/baselines/results.md`.
+- In baseline markdown, `_Güncellendi:` timestamp is normalized to `<normalized>` so fixture comparisons remain deterministic.
 
 ## Runtime Outputs
 
@@ -186,4 +196,3 @@ Rules:
 - Keep existing IDs unchanged.
 - Add new IDs in `qNNN` format.
 - Fill required fields for each question.
-

@@ -11,11 +11,16 @@ from engine import get_client, stream_chat
 @dataclass
 class ModelRunState:
     model: str = ""
+    trace_id: str = ""
+    session_id: str = ""
+    dataset_key: str = ""
+    question_id: str = ""
     response: str = ""
     running: bool = False
     completed: bool = False
     interrupted: bool = False
     error: str = ""
+    event: str = "idle"
     started_at: float = 0.0
     ended_at: float = 0.0
 
@@ -23,6 +28,9 @@ class ModelRunState:
 @dataclass
 class LiveRunState:
     run_id: int = 0
+    trace_id: str = ""
+    session_id: str = ""
+    dataset_key: str = ""
     running: bool = False
     completed: bool = False
     question_id: str = ""
@@ -37,7 +45,17 @@ class LiveRunner:
     def __init__(self) -> None:
         self.state = LiveRunState()
 
-    def start(self, models: list[str], question_id: str, prompt: str, system_prompt: str) -> bool:
+    def start(
+        self,
+        models: list[str],
+        question_id: str,
+        prompt: str,
+        system_prompt: str,
+        *,
+        session_id: str = "",
+        dataset_key: str = "",
+        trace_id: str = "",
+    ) -> bool:
         normalized_models: list[str] = []
         seen_models: set[str] = set()
         for model in models:
@@ -56,6 +74,9 @@ class LiveRunner:
             self.state.run_id += 1
             self.state.running = True
             self.state.completed = False
+            self.state.trace_id = trace_id
+            self.state.session_id = session_id
+            self.state.dataset_key = dataset_key
             self.state.question_id = question_id
             self.state.prompt = prompt
             self.state.stop_event = threading.Event()
@@ -65,7 +86,12 @@ class LiveRunner:
             for model in normalized_models:
                 self.state.entries[model] = ModelRunState(
                     model=model,
+                    trace_id=trace_id,
+                    session_id=session_id,
+                    dataset_key=dataset_key,
+                    question_id=question_id,
                     running=True,
+                    event="run_started",
                     started_at=started_at,
                 )
             run_id = self.state.run_id
@@ -101,6 +127,7 @@ class LiveRunner:
                     if entry is None:
                         return
                     entry.response = "".join(chunks)
+                    entry.event = "chunk"
         except Exception as exc:  # noqa: BLE001
             error = str(exc)
 
@@ -116,6 +143,12 @@ class LiveRunner:
             entry.interrupted = interrupted
             entry.running = False
             entry.completed = True
+            if error:
+                entry.event = "run_error"
+            elif interrupted:
+                entry.event = "run_interrupted"
+            else:
+                entry.event = "entry_completed"
             entry.ended_at = end_time
             entries = list(self.state.entries.values())
             self.state.running = any(item.running for item in entries)
@@ -133,16 +166,24 @@ class LiveRunner:
                 entries.append(
                     {
                         "model": entry.model,
+                        "trace_id": entry.trace_id,
+                        "session_id": entry.session_id,
+                        "dataset_key": entry.dataset_key,
+                        "question_id": entry.question_id,
                         "running": entry.running,
                         "completed": entry.completed,
                         "interrupted": entry.interrupted,
                         "error": entry.error,
+                        "event": entry.event,
                         "response": entry.response,
                         "elapsed_ms": elapsed_ms,
                     }
                 )
             return {
                 "run_id": self.state.run_id,
+                "trace_id": self.state.trace_id,
+                "session_id": self.state.session_id,
+                "dataset_key": self.state.dataset_key,
                 "running": self.state.running,
                 "completed": self.state.completed,
                 "question_id": self.state.question_id,
