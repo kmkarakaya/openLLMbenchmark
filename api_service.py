@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 from typing import Any
+import uuid
 
 import portalocker
 
@@ -117,6 +118,9 @@ def start_run(*, session_id: str, dataset_key: str, question_id: str, models: li
         question_id=question_id,
         prompt=str(question.get("prompt", "")),
         system_prompt=system_prompt,
+        session_id=session_id,
+        dataset_key=dataset_key,
+        trace_id=uuid.uuid4().hex,
     )
     if not started:
         return None, "conflict"
@@ -163,4 +167,3 @@ def _format_matrix_cell(record: dict[str, Any] | None) -> str:
 
 def record_prompt_hash(prompt: str) -> str:
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
-

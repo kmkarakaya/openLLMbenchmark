@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from api import app
+import api_service
 from fixtures import load_baseline_fixtures
 
 
@@ -57,6 +58,47 @@ def test_runs_endpoint_gated_by_feature_flag(monkeypatch) -> None:
     assert response.status_code == 404
 
 
+def test_start_run_passes_correlation_fields_to_runner(monkeypatch) -> None:
+    monkeypatch.setenv("FEATURE_API_RUNS", "true")
+    dataset = {
+        "default_tr": {
+            "key": "default_tr",
+            "label": "Default",
+            "is_default": True,
+            "path": ROOT / "data" / "benchmark.json",
+            "signature": "sig",
+            "instruction": "sys",
+            "questions": [{"id": "q001", "prompt": "Prompt"}],
+        }
+    }
+    monkeypatch.setattr(api_service, "_dataset_option_map", lambda: dataset)
+
+    captured: dict[str, object] = {}
+
+    class _Runner:
+        def start(self, **kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+            return True
+
+        def snapshot(self):  # type: ignore[no-untyped-def]
+            return {"run_id": 7}
+
+    monkeypatch.setattr(api_service, "get_runner", lambda session_id: _Runner())
+    run_id, state = api_service.start_run(
+        session_id="sess-1",
+        dataset_key="default_tr",
+        question_id="q001",
+        models=["gemma3:4b"],
+        system_prompt="system",
+    )
+    assert run_id == 7
+    assert state == "started"
+    assert captured["session_id"] == "sess-1"
+    assert captured["dataset_key"] == "default_tr"
+    assert captured["question_id"] == "q001"
+    assert isinstance(captured.get("trace_id"), str) and captured["trace_id"]
+
+
 def test_manual_results_write_endpoint_locked_while_api_writes_disabled(monkeypatch) -> None:
     monkeypatch.setenv("FEATURE_API_WRITES", "false")
     client = TestClient(app)
@@ -68,7 +110,11 @@ def test_phase0_baseline_fixtures_exist_and_are_loadable() -> None:
     baseline_results, baseline_markdown = load_baseline_fixtures()
     assert isinstance(baseline_results, list)
     assert isinstance(baseline_markdown, str)
-    assert "# Open LLM Benchmark Results" in baseline_markdown or baseline_markdown == ""
+    baseline_md_path = ROOT / "data" / "baselines" / "results.md"
+    if baseline_md_path.exists():
+        assert "# Open LLM Benchmark Results" in baseline_markdown
+    else:
+        assert baseline_markdown == ""
 
 
 def test_baseline_fixture_json_matches_repo_results_json_shape() -> None:
@@ -83,4 +129,3 @@ def test_baseline_fixture_json_matches_repo_results_json_shape() -> None:
         baseline_keys = set(baseline_results[0].keys())
         repo_keys = set(repo_results[0].keys())
         assert baseline_keys == repo_keys
-

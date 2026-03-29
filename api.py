@@ -148,7 +148,7 @@ async def run_events(run_id: int, session_id: str = Query(..., min_length=1)) ->
                 yield {"event": "run_completed", "data": json.dumps({"run_id": run_id})}
                 break
 
-            await _sleep_safely(0.2)
+            await asyncio.sleep(0.2)
 
     return EventSourceResponse(_event_generator())
 
@@ -172,7 +172,3 @@ def results_manual() -> Response:
             content={"detail": "API writes disabled; Streamlit remains sole writer."},
         )
     raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not enabled in this phase")
-
-
-async def _sleep_safely(seconds: float) -> None:
-    await asyncio.sleep(seconds)
