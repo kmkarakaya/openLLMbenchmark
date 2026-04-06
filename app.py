@@ -699,7 +699,7 @@ def sidebar_collapsible_section(title: str, state_key: str, default: bool = Fals
         st.session_state[state_key] = default
     is_open = bool(st.session_state[state_key])
     chevron = "▾" if is_open else "▸"
-    if st.button(f"{chevron} {title}", key=f"{state_key}_toggle", use_container_width=True):
+    if st.button(f"{chevron} {title}", key=f"{state_key}_toggle", width='stretch'):
         is_open = not is_open
         st.session_state[state_key] = is_open
     return is_open
@@ -802,7 +802,7 @@ def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
             data=dataset_template_bytes(),
             file_name="dataset_template.json",
             mime="application/json",
-            use_container_width=False,
+            width='content',
         )
         uploaded_files = st.file_uploader(
             "Upload dataset JSON",
@@ -864,7 +864,7 @@ def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
             st.button(
                 "Delete Uploaded Dataset",
                 key="dataset_delete_disabled_default",
-                use_container_width=True,
+                width='stretch',
                 disabled=True,
             )
             st.caption("Select an uploaded dataset from the list to enable deletion.")
@@ -881,7 +881,7 @@ def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
                 if st.button(
                     "Delete Uploaded Dataset",
                     key=f"dataset_delete_begin_{selected_key}",
-                    use_container_width=True,
+                    width='stretch',
                 ):
                     st.session_state.dataset_delete_pending_key = selected_key
                     st.rerun()
@@ -895,7 +895,7 @@ def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
                 if confirm_col.button(
                     "Delete Permanently",
                     key=f"dataset_delete_confirm_{selected_key}",
-                    use_container_width=True,
+                    width='stretch',
                     type="primary",
                 ):
                     try:
@@ -925,7 +925,7 @@ def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
                 if cancel_col.button(
                     "Keep Dataset",
                     key=f"dataset_delete_cancel_{selected_key}",
-                    use_container_width=True,
+                    width='stretch',
                 ):
                     st.session_state.dataset_delete_pending_key = ""
                     st.rerun()
@@ -1523,7 +1523,7 @@ def render_metrics_panel(results: list[dict[str, Any]]) -> None:
     )
     st.dataframe(
         frame,
-        use_container_width=True,
+        width='stretch',
         hide_index=True,
         column_config={
             "Model Name": st.column_config.TextColumn(
@@ -1581,7 +1581,7 @@ def render_matrix_panel(questions: list[dict[str, Any]], results: list[dict[str,
         matrix_rows.append(row)
 
     st.subheader("Question-Level Results Matrix")
-    st.dataframe(pd.DataFrame(matrix_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(matrix_rows), width='stretch', hide_index=True)
 
 
 def _normalize_metadata_value(value: Any) -> str:
@@ -1699,7 +1699,7 @@ def render_dataset_metadata_stats_panel(questions: list[dict[str, Any]]) -> None
                         ],
                     },
                 },
-                use_container_width=True,
+                width='stretch',
             )
 
     with difficulty_col:
@@ -1725,7 +1725,7 @@ def render_dataset_metadata_stats_panel(questions: list[dict[str, Any]]) -> None
                         ],
                     },
                 },
-                use_container_width=True,
+                width='stretch',
             )
 
 
@@ -1933,7 +1933,7 @@ def render() -> None:
                     data=json_bytes,
                     file_name=f"{download_stem}.json",
                     mime="application/json",
-                    use_container_width=False,
+                    width='content',
                     disabled=not results,
                 )
             else:
@@ -1942,7 +1942,7 @@ def render() -> None:
                     data=excel_bytes,
                     file_name=f"{download_stem}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=False,
+                    width='content',
                     disabled=excel_download_disabled,
                 )
             if excel_dependency_hint:
@@ -1998,7 +1998,7 @@ def render() -> None:
 
     nav_a, nav_b, nav_c = st.columns([1, 2, 1])
     with nav_a:
-        if st.button("◀ Previous", use_container_width=True, disabled=idx == 0):
+        if st.button("◀ Previous", width='stretch', disabled=idx == 0):
             st.session_state.question_index = max(0, idx - 1)
             st.rerun()
     with nav_b:
@@ -2014,7 +2014,7 @@ def render() -> None:
             st.session_state.question_index = int(goto) - 1
             st.rerun()
     with nav_c:
-        if st.button("Next ▶", use_container_width=True, disabled=idx >= len(questions) - 1):
+        if st.button("Next ▶", width='stretch', disabled=idx >= len(questions) - 1):
             st.session_state.question_index = min(len(questions) - 1, idx + 1)
             st.rerun()
 
@@ -2045,7 +2045,7 @@ def render() -> None:
         if st.button(
             start_label,
             type="primary",
-            use_container_width=True,
+            width='stretch',
             disabled=(not run_eligible) or snapshot["running"],
         ):
             ok = runner.start(
@@ -2064,7 +2064,7 @@ def render() -> None:
     with stop_col:
         if st.button(
             "Stop",
-            use_container_width=True,
+            width='stretch',
             disabled=not snapshot["running"],
         ):
             runner.request_stop()
@@ -2230,7 +2230,7 @@ def render() -> None:
             can_override = bool(model and manual_target)
             if c1.button(
                 "Successful",
-                use_container_width=True,
+                width='stretch',
                 disabled=not can_override,
                 key=f"manual_success_{question['id']}_{model or panel_index}",
             ):
@@ -2253,7 +2253,7 @@ def render() -> None:
                 st.rerun()
             if c2.button(
                 "Failed",
-                use_container_width=True,
+                width='stretch',
                 disabled=not can_override,
                 key=f"manual_fail_{question['id']}_{model or panel_index}",
             ):
@@ -2276,7 +2276,7 @@ def render() -> None:
                 st.rerun()
             if c3.button(
                 "Needs Review",
-                use_container_width=True,
+                width='stretch',
                 disabled=not can_override,
                 key=f"manual_review_{question['id']}_{model or panel_index}",
             ):
