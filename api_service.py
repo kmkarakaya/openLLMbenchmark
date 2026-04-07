@@ -12,12 +12,15 @@ from data.benchmark import load_benchmark_payload
 from data.dataset_config import (
     DEFAULT_DATASET_KEY,
     compute_dataset_signature,
+    dataset_template_bytes,
+    delete_uploaded_dataset_with_artifacts,
     discover_datasets,
     resolve_results_paths,
+    save_uploaded_dataset,
 )
 from mode_selection import normalize_selected_models
 from runner import get_runner
-from storage import compute_model_metrics, load_results
+from storage import compute_model_metrics, load_results, prepare_results_excel, prepare_results_json
 
 
 ROOT = Path(__file__).resolve().parent
@@ -99,6 +102,61 @@ def get_results(dataset_key: str) -> dict[str, Any] | None:
     }
 
 
+def get_dataset_template() -> bytes:
+    return dataset_template_bytes()
+
+
+def upload_dataset(*, filename: str, content: bytes) -> dict[str, Any]:
+    path = save_uploaded_dataset(UPLOADED_DATASETS_DIR, filename, content)
+    options = discover_datasets(BENCHMARK_PATH, UPLOADED_DATASETS_DIR)
+    option = next((item for item in options if Path(item["path"]) == path), None)
+    if option is None:
+        raise RuntimeError("Uploaded dataset could not be resolved.")
+    payload = load_benchmark_payload(path)
+    return {
+        "key": option["key"],
+        "label": option["label"],
+        "is_default": bool(option["is_default"]),
+        "signature": compute_dataset_signature(path),
+        "question_count": len(payload.get("questions", [])),
+    }
+
+
+def delete_dataset(dataset_key: str) -> tuple[str, dict[str, Any] | None]:
+    options = _dataset_option_map()
+    target = options.get(dataset_key)
+    if target is None:
+        return "not_found", None
+    if target["is_default"] or dataset_key == DEFAULT_DATASET_KEY:
+        return "default_forbidden", None
+    summary = delete_uploaded_dataset_with_artifacts(target, DATA_DIR, ROOT)
+    return "deleted", {
+        "dataset_key": dataset_key,
+        "target_count": summary["target_count"],
+        "deleted_count": summary["deleted_count"],
+        "missing_count": summary["missing_count"],
+    }
+
+
+def export_results(dataset_key: str, export_format: str) -> tuple[bytes, str, str] | None:
+    dataset = _dataset_option_map().get(dataset_key)
+    if dataset is None:
+        return None
+    results_path, _ = resolve_results_paths(dataset_key, DATA_DIR, ROOT)
+    with portalocker.Lock(str(LOCK_PATH), timeout=10):
+        rows = load_results(results_path)
+    stem = "results" if dataset_key == DEFAULT_DATASET_KEY else f"results_{dataset_key}"
+    if export_format == "json":
+        return prepare_results_json(rows), "application/json", f"{stem}.json"
+    if export_format == "xlsx":
+        return (
+            prepare_results_excel(rows),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            f"{stem}.xlsx",
+        )
+    raise ValueError("Unsupported export format.")
+
+
 def start_run(*, session_id: str, dataset_key: str, question_id: str, models: list[str], system_prompt: str) -> tuple[int | None, str]:
     flags = get_feature_flags()
     if not flags.api_runs:
@@ -136,6 +194,38 @@ def stop_run(*, session_id: str) -> None:
 def run_snapshot(*, session_id: str) -> dict[str, Any]:
     runner = get_runner(session_id)
     return runner.snapshot()
+
+
+def get_run_status(*, run_id: int, session_id: str) -> dict[str, Any] | None:
+    snapshot = run_snapshot(session_id=session_id)
+    if int(snapshot.get("run_id", 0)) != run_id:
+        return None
+    entries = snapshot.get("entries", [])
+    interrupted = any(bool(item.get("interrupted")) for item in entries)
+    error = next((str(item.get("error", "")) for item in entries if str(item.get("error", "")).strip()), "")
+    status_entries = [
+        {
+            "model": str(item.get("model", "")),
+            "running": bool(item.get("running")),
+            "completed": bool(item.get("completed")),
+            "interrupted": bool(item.get("interrupted")),
+            "error": str(item.get("error", "")),
+            "event": str(item.get("event", "")),
+            "elapsed_ms": float(item.get("elapsed_ms", 0.0)),
+        }
+        for item in entries
+    ]
+    return {
+        "run_id": run_id,
+        "session_id": str(snapshot.get("session_id", "")),
+        "dataset_key": str(snapshot.get("dataset_key", "")),
+        "question_id": str(snapshot.get("question_id", "")),
+        "running": bool(snapshot.get("running")),
+        "completed": bool(snapshot.get("completed")),
+        "interrupted": interrupted,
+        "error": error,
+        "entries": status_entries,
+    }
 
 
 def _build_matrix(questions: list[dict[str, Any]], results: list[dict[str, Any]]) -> list[dict[str, Any]]:

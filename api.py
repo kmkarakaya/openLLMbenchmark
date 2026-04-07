@@ -5,19 +5,24 @@ import json
 import uuid
 from typing import AsyncIterator
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from api_service import (
+    delete_dataset,
+    export_results,
     get_datasets,
+    get_dataset_template,
     get_health,
     get_models,
     get_questions,
     get_results,
+    get_run_status,
     run_snapshot,
     start_run,
     stop_run,
+    upload_dataset,
 )
 from config import get_feature_flags
 
@@ -49,6 +54,52 @@ def datasets() -> dict[str, list[dict[str, object]]]:
     return {"datasets": get_datasets()}
 
 
+@app.get("/datasets/template")
+def datasets_template() -> Response:
+    flags = get_feature_flags()
+    if not flags.api_reads:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API reads are disabled")
+    content = get_dataset_template()
+    headers = {"Content-Disposition": 'attachment; filename="benchmark_template.json"'}
+    return Response(content=content, media_type="application/json", headers=headers)
+
+
+@app.post("/datasets/upload", status_code=status.HTTP_201_CREATED)
+async def datasets_upload(file: UploadFile = File(...)) -> dict[str, object]:
+    flags = get_feature_flags()
+    if not flags.api_writes:
+        return JSONResponse(
+            status_code=status.HTTP_423_LOCKED,
+            content={"detail": "API writes disabled; Streamlit remains sole writer."},
+        )
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uploaded file is empty.")
+    try:
+        dataset = upload_dataset(filename=file.filename or "dataset.json", content=payload)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return {"dataset": dataset}
+
+
+@app.delete("/datasets/{dataset_key}")
+def datasets_delete(dataset_key: str) -> dict[str, object]:
+    flags = get_feature_flags()
+    if not flags.api_writes:
+        return JSONResponse(
+            status_code=status.HTTP_423_LOCKED,
+            content={"detail": "API writes disabled; Streamlit remains sole writer."},
+        )
+    state, summary = delete_dataset(dataset_key)
+    if state == "not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
+    if state == "default_forbidden":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Default dataset cannot be deleted.")
+    return {"status": "deleted", "summary": summary}
+
+
 @app.get("/questions")
 def questions(dataset_key: str = Query(..., min_length=1)) -> dict[str, object]:
     flags = get_feature_flags()
@@ -69,6 +120,22 @@ def results(dataset_key: str = Query(..., min_length=1)) -> dict[str, object]:
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
     return payload
+
+
+@app.get("/results/export")
+def results_export(
+    dataset_key: str = Query(..., min_length=1),
+    export_format: str = Query(..., alias="format", pattern="^(json|xlsx)$"),
+) -> Response:
+    flags = get_feature_flags()
+    if not flags.api_reads:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API reads are disabled")
+    exported = export_results(dataset_key, export_format)
+    if exported is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
+    content, media_type, filename = exported
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(content=content, media_type=media_type, headers=headers)
 
 
 @app.post("/runs", status_code=status.HTTP_201_CREATED)
@@ -151,6 +218,17 @@ async def run_events(run_id: int, session_id: str = Query(..., min_length=1)) ->
             await asyncio.sleep(0.2)
 
     return EventSourceResponse(_event_generator())
+
+
+@app.get("/runs/{run_id}/status")
+def run_status(run_id: int, session_id: str = Query(..., min_length=1)) -> dict[str, object]:
+    flags = get_feature_flags()
+    if not flags.api_runs:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API runs are disabled")
+    payload = get_run_status(run_id=run_id, session_id=session_id)
+    if payload is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+    return payload
 
 
 @app.post("/runs/{run_id}/stop", status_code=status.HTTP_202_ACCEPTED)
