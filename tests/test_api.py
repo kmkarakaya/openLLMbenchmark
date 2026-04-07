@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -316,21 +317,57 @@ def test_manual_results_write_updates_dataset_scoped_record(monkeypatch, tmp_pat
     assert persisted[0]["status"] == "success"
     assert persisted[0]["dataset_key"] == "uploaded_demo"
     assert persisted[0]["dataset_signature"] == "sig-123"
-    assert persisted[0]["question_prompt_hash"]
+    assert persisted[0]["question_prompt_hash"] == hashlib.sha256("Prompt text".encode("utf-8")).hexdigest()[:16]
     assert (results_dir / "uploaded-demo.md").exists()
 
 
-def test_manual_results_write_rejects_invalid_status(monkeypatch) -> None:
+def test_manual_results_write_rejects_invalid_status(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("FEATURE_API_WRITES", "true")
+    data_dir = tmp_path / "data"
+    root_dir = tmp_path
+    data_dir.mkdir(parents=True, exist_ok=True)
+    results_dir = data_dir / "results_by_dataset"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    results_path = results_dir / "uploaded-demo.json"
+    results_path.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "q001",
+                    "model": "gemma3:4b",
+                    "status": "fail",
+                    "score": 0,
+                    "auto_scored": True,
+                    "reason": "Text similarity: 10",
+                }
+            ],
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api_service, "DATA_DIR", data_dir)
+    monkeypatch.setattr(api_service, "ROOT", root_dir)
     monkeypatch.setattr(
-        "api.apply_manual_result_override",
-        lambda **kwargs: ("invalid_status", None),
+        api_service,
+        "_dataset_option_map",
+        lambda: {
+            "uploaded_demo": {
+                "key": "uploaded_demo",
+                "label": "Uploaded",
+                "is_default": False,
+                "path": tmp_path / "uploaded-demo.json",
+                "signature": "sig-123",
+                "instruction": "",
+                "questions": [{"id": "q001", "prompt": "Prompt text"}],
+            }
+        },
     )
     client = TestClient(app)
     response = client.patch(
         "/results/manual",
         json={
-            "dataset_key": "default_tr",
+            "dataset_key": "uploaded_demo",
             "question_id": "q001",
             "model": "gemma3:4b",
             "status": "unknown",
