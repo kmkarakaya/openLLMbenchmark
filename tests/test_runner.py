@@ -35,6 +35,9 @@ def test_runner_collects_two_model_responses(monkeypatch) -> None:
         question_id="q001",
         prompt="Merhaba?",
         system_prompt="Türkçe cevap ver.",
+        session_id="session-a",
+        dataset_key="default_tr",
+        trace_id="trace-123",
     )
 
     assert started is True
@@ -47,6 +50,14 @@ def test_runner_collects_two_model_responses(monkeypatch) -> None:
     assert entries["qwen3:8b"]["response"] == "Dünya"
     assert entries["gemma3:4b"]["elapsed_ms"] >= 0
     assert entries["qwen3:8b"]["elapsed_ms"] >= 0
+    assert snapshot["trace_id"] == "trace-123"
+    assert snapshot["session_id"] == "session-a"
+    assert snapshot["dataset_key"] == "default_tr"
+    assert entries["gemma3:4b"]["trace_id"] == "trace-123"
+    assert entries["gemma3:4b"]["session_id"] == "session-a"
+    assert entries["gemma3:4b"]["dataset_key"] == "default_tr"
+    assert entries["gemma3:4b"]["question_id"] == "q001"
+    assert entries["gemma3:4b"]["event"] in {"entry_completed", "run_error", "run_interrupted"}
 
 
 def test_runner_stop_interrupts_all_models(monkeypatch) -> None:
@@ -66,6 +77,9 @@ def test_runner_stop_interrupts_all_models(monkeypatch) -> None:
         question_id="q002",
         prompt="Dur?",
         system_prompt="Türkçe cevap ver.",
+        session_id="session-b",
+        dataset_key="default_tr",
+        trace_id="trace-456",
     )
 
     assert started is True

@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import portalocker
+
+LOCK_TIMEOUT_SECONDS = 10
 
 
 STATUS_ICON = {
@@ -33,8 +36,10 @@ def save_questions(path: Path, payload: dict[str, Any]) -> None:
 def load_results(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
+    lock_path = path.with_suffix(path.suffix + ".lock")
     try:
-        raw = path.read_text(encoding="utf-8")
+        with portalocker.Lock(str(lock_path), timeout=LOCK_TIMEOUT_SECONDS):
+            raw = path.read_text(encoding="utf-8")
     except OSError:
         return []
 
@@ -60,9 +65,11 @@ def load_results(path: Path) -> list[dict[str, Any]]:
 def save_results(path: Path, results: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_suffix(path.suffix + ".tmp")
-    with temp_path.open("w", encoding="utf-8") as file:
-        json.dump(results, file, ensure_ascii=False, indent=2)
-    os.replace(temp_path, path)
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    with portalocker.Lock(str(lock_path), timeout=LOCK_TIMEOUT_SECONDS):
+        with temp_path.open("w", encoding="utf-8") as file:
+            json.dump(results, file, ensure_ascii=False, indent=2)
+        os.replace(temp_path, path)
 
 
 def upsert_result(results: list[dict[str, Any]], record: dict[str, Any]) -> list[dict[str, Any]]:
@@ -213,7 +220,9 @@ def render_results_markdown(
             lines.append("| " + " | ".join(row) + " |")
         lines.append("")
 
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+    lock_path = output_path.with_suffix(output_path.suffix + ".lock")
+    with portalocker.Lock(str(lock_path), timeout=LOCK_TIMEOUT_SECONDS):
+        output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def prepare_results_json(results: list[dict[str, Any]]) -> bytes:
@@ -228,4 +237,3 @@ def prepare_results_excel(results: list[dict[str, Any]]) -> bytes:
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Results")
     return buffer.getvalue()
-

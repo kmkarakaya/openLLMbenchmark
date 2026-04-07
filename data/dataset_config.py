@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import TypedDict
 
+import portalocker
+
 from data.benchmark import load_benchmark_payload
 
 
@@ -54,17 +56,19 @@ def build_uploaded_filename(original_name: str, content: bytes) -> str:
 def save_uploaded_dataset(upload_dir: Path, original_name: str, content: bytes) -> Path:
     upload_dir.mkdir(parents=True, exist_ok=True)
     destination = upload_dir / build_uploaded_filename(original_name, content)
+    lock_path = upload_dir / ".datasets.lock"
     wrote_file = False
-    if not destination.exists():
-        destination.write_bytes(content)
-        wrote_file = True
+    with portalocker.Lock(str(lock_path), timeout=10):
+        if not destination.exists():
+            destination.write_bytes(content)
+            wrote_file = True
 
-    try:
-        load_benchmark_payload(destination)
-    except Exception:
-        if wrote_file and destination.exists():
-            destination.unlink(missing_ok=True)
-        raise
+        try:
+            load_benchmark_payload(destination)
+        except Exception:
+            if wrote_file and destination.exists():
+                destination.unlink(missing_ok=True)
+            raise
 
     return destination
 
@@ -163,12 +167,14 @@ def delete_uploaded_dataset_with_artifacts(
 
     deleted_count = 0
     missing_count = 0
-    for target in target_paths:
-        if target.exists():
-            target.unlink(missing_ok=True)
-            deleted_count += 1
-        else:
-            missing_count += 1
+    lock_path = data_dir / ".datasets.lock"
+    with portalocker.Lock(str(lock_path), timeout=10):
+        for target in target_paths:
+            if target.exists():
+                target.unlink(missing_ok=True)
+                deleted_count += 1
+            else:
+                missing_count += 1
 
     return {
         "target_count": len(target_paths),

@@ -60,3 +60,9 @@ def test_save_results_is_atomic(tmp_path: Path) -> None:
     save_results(path, payload)
     loaded = load_results(path)
     assert loaded == payload
+
+
+def test_save_results_creates_file_lock_sidecar(tmp_path: Path) -> None:
+    path = tmp_path / "results.json"
+    save_results(path, [{"question_id": "q001", "model": "x"}])
+    assert (tmp_path / "results.json.lock").exists()
