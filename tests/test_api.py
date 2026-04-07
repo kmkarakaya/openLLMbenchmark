@@ -253,6 +253,92 @@ def test_manual_results_write_endpoint_locked_while_api_writes_disabled(monkeypa
     assert response.status_code == 423
 
 
+def test_manual_results_write_updates_dataset_scoped_record(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FEATURE_API_WRITES", "true")
+    data_dir = tmp_path / "data"
+    root_dir = tmp_path
+    data_dir.mkdir(parents=True, exist_ok=True)
+    results_dir = data_dir / "results_by_dataset"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    results_path = results_dir / "uploaded-demo.json"
+    results_path.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "q001",
+                    "model": "gemma3:4b",
+                    "status": "fail",
+                    "score": 0,
+                    "auto_scored": True,
+                    "reason": "Text similarity: 10",
+                }
+            ],
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api_service, "DATA_DIR", data_dir)
+    monkeypatch.setattr(api_service, "ROOT", root_dir)
+    monkeypatch.setattr(
+        api_service,
+        "_dataset_option_map",
+        lambda: {
+            "uploaded_demo": {
+                "key": "uploaded_demo",
+                "label": "Uploaded",
+                "is_default": False,
+                "path": tmp_path / "uploaded-demo.json",
+                "signature": "sig-123",
+                "instruction": "",
+                "questions": [{"id": "q001", "prompt": "Prompt text"}],
+            }
+        },
+    )
+    client = TestClient(app)
+    response = client.patch(
+        "/results/manual",
+        json={
+            "dataset_key": "uploaded_demo",
+            "question_id": "q001",
+            "model": "gemma3:4b",
+            "status": "success",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "updated"
+    assert body["result"]["status"] == "success"
+    assert body["result"]["score"] == 1
+    assert body["result"]["auto_scored"] is False
+    assert body["result"]["reason"] == "User approval"
+    persisted = json.loads(results_path.read_text(encoding="utf-8"))
+    assert persisted[0]["status"] == "success"
+    assert persisted[0]["dataset_key"] == "uploaded_demo"
+    assert persisted[0]["dataset_signature"] == "sig-123"
+    assert persisted[0]["question_prompt_hash"]
+    assert (results_dir / "uploaded-demo.md").exists()
+
+
+def test_manual_results_write_rejects_invalid_status(monkeypatch) -> None:
+    monkeypatch.setenv("FEATURE_API_WRITES", "true")
+    monkeypatch.setattr(
+        "api.apply_manual_result_override",
+        lambda **kwargs: ("invalid_status", None),
+    )
+    client = TestClient(app)
+    response = client.patch(
+        "/results/manual",
+        json={
+            "dataset_key": "default_tr",
+            "question_id": "q001",
+            "model": "gemma3:4b",
+            "status": "unknown",
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_phase0_baseline_fixtures_exist_and_are_loadable() -> None:
     baseline_results, baseline_markdown = load_baseline_fixtures()
     assert isinstance(baseline_results, list)

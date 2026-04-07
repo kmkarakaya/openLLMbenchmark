@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from api_service import (
+    apply_manual_result_override,
     delete_dataset,
     export_results,
     get_datasets,
@@ -242,11 +243,37 @@ def run_stop(run_id: int, session_id: str = Query(..., min_length=1)) -> dict[st
 
 
 @app.patch("/results/manual")
-def results_manual() -> Response:
+async def results_manual(request: Request):
     flags = get_feature_flags()
     if not flags.api_writes:
         return JSONResponse(
             status_code=status.HTTP_423_LOCKED,
             content={"detail": "API writes disabled; Streamlit remains sole writer."},
         )
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Not enabled in this phase")
+    body = await request.json()
+    dataset_key = str(body.get("dataset_key", "")).strip()
+    question_id = str(body.get("question_id", "")).strip()
+    model = str(body.get("model", "")).strip()
+    override_status = str(body.get("status", "")).strip()
+    reason = str(body.get("reason", "") or "")
+    if not dataset_key or not question_id or not model or not override_status:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid manual override payload")
+    state, payload = apply_manual_result_override(
+        dataset_key=dataset_key,
+        question_id=question_id,
+        model=model,
+        status=override_status,
+        reason=reason,
+    )
+    if state == "dataset_not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
+    if state == "result_not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result record not found")
+    if state == "invalid_status":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid status; expected success, fail, or manual_review.",
+        )
+    if state != "updated" or payload is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Manual override failed")
+    return {"status": "updated", "result": payload}

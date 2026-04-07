@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 import uuid
@@ -20,7 +21,16 @@ from data.dataset_config import (
 )
 from mode_selection import normalize_selected_models
 from runner import get_runner
-from storage import compute_model_metrics, load_results, prepare_results_excel, prepare_results_json
+from scoring import normalize_reason_text
+from storage import (
+    compute_model_metrics,
+    load_results,
+    prepare_results_excel,
+    prepare_results_json,
+    render_results_markdown,
+    save_results,
+    upsert_result,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -155,6 +165,64 @@ def export_results(dataset_key: str, export_format: str) -> tuple[bytes, str, st
             f"{stem}.xlsx",
         )
     raise ValueError("Unsupported export format.")
+
+
+def apply_manual_result_override(
+    *,
+    dataset_key: str,
+    question_id: str,
+    model: str,
+    status: str,
+    reason: str,
+) -> tuple[str, dict[str, Any] | None]:
+    dataset = _dataset_option_map().get(dataset_key)
+    if dataset is None:
+        return "dataset_not_found", None
+    override_defaults = {
+        "success": {"score": 1, "reason": "User approval"},
+        "fail": {"score": 0, "reason": "User approval"},
+        "manual_review": {"score": None, "reason": "Marked by user for manual review"},
+    }
+    selected = override_defaults.get(status)
+    if selected is None:
+        return "invalid_status", None
+    results_path, results_md_path = resolve_results_paths(dataset_key, DATA_DIR, ROOT)
+    with portalocker.Lock(str(LOCK_PATH), timeout=10):
+        rows = load_results(results_path)
+        existing = next(
+            (
+                row
+                for row in rows
+                if str(row.get("question_id", "")) == question_id and str(row.get("model", "")) == model
+            ),
+            None,
+        )
+        if existing is None:
+            return "result_not_found", None
+        updated = dict(existing)
+        updated["dataset_key"] = dataset_key
+        updated["dataset_signature"] = dataset["signature"]
+        updated["status"] = status
+        updated["score"] = selected["score"]
+        updated["auto_scored"] = False
+        updated["interrupted"] = False
+        updated["reason"] = normalize_reason_text(reason.strip() or str(selected["reason"]))
+        updated["timestamp"] = datetime.now(timezone.utc).isoformat()
+        if not str(updated.get("question_prompt_hash", "")).strip():
+            prompt = next(
+                (
+                    str(question.get("prompt", ""))
+                    for question in dataset["questions"]
+                    if str(question.get("id", "")) == question_id
+                ),
+                "",
+            )
+            if prompt:
+                updated["question_prompt_hash"] = record_prompt_hash(prompt)
+        merged = upsert_result(rows, updated)
+        save_results(results_path, merged)
+        render_results_markdown(dataset["questions"], merged, results_md_path)
+    return "updated", updated
 
 
 def start_run(*, session_id: str, dataset_key: str, question_id: str, models: list[str], system_prompt: str) -> tuple[int | None, str]:
