@@ -786,8 +786,11 @@ def resolve_dataset_selection(dataset_options: list[DatasetOption]) -> str:
 def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
     dataset_options = discover_datasets(BENCHMARK_PATH, UPLOADED_DATASETS_DIR)
     selected_key = resolve_dataset_selection(dataset_options)
+    write_locked = get_feature_flags().api_writes
 
     if sidebar_collapsible_section("Dataset Config", "sidebar_dataset_config_open", default=False):
+        if write_locked:
+            st.info("API write mode is enabled. Streamlit dataset mutations are disabled (read/observe-only).")
         delete_notice = str(st.session_state.get("dataset_delete_notice", "") or "").strip()
         if delete_notice:
             delete_notice_level = str(st.session_state.get("dataset_delete_notice_level", "success") or "success")
@@ -810,8 +813,9 @@ def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
             type=["json"],
             accept_multiple_files=True,
             key="dataset_config_upload_json",
+            disabled=write_locked,
         )
-        if uploaded_files:
+        if uploaded_files and not write_locked:
             upload_signatures = sorted(
                 f"{uploaded_file.name}:{hashlib.sha256(uploaded_file.getvalue()).hexdigest()}"
                 for uploaded_file in uploaded_files
@@ -874,6 +878,9 @@ def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
         else:
             st.caption(f"Selected uploaded dataset: {selected_option['label']}")
             pending_key = str(st.session_state.get("dataset_delete_pending_key", "") or "")
+            if write_locked and pending_key:
+                st.session_state.dataset_delete_pending_key = ""
+                pending_key = ""
             if pending_key and pending_key != selected_key:
                 st.session_state.dataset_delete_pending_key = ""
                 pending_key = ""
@@ -883,6 +890,7 @@ def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
                     "Delete Uploaded Dataset",
                     key=f"dataset_delete_begin_{selected_key}",
                     width='stretch',
+                    disabled=write_locked,
                 ):
                     st.session_state.dataset_delete_pending_key = selected_key
                     st.rerun()
@@ -898,6 +906,7 @@ def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
                     key=f"dataset_delete_confirm_{selected_key}",
                     width='stretch',
                     type="primary",
+                    disabled=write_locked,
                 ):
                     try:
                         summary: DatasetDeleteSummary = delete_uploaded_dataset_with_artifacts(
@@ -927,6 +936,7 @@ def render_dataset_config_sidebar() -> tuple[str, list[DatasetOption]]:
                     "Keep Dataset",
                     key=f"dataset_delete_cancel_{selected_key}",
                     width='stretch',
+                    disabled=write_locked,
                 ):
                     st.session_state.dataset_delete_pending_key = ""
                     st.rerun()
@@ -1810,6 +1820,18 @@ def render() -> None:
         tested_model_count_info = st.empty()
         selected_dataset_key, dataset_options = render_dataset_config_sidebar()
 
+    if feature_flags.new_ui:
+        new_ui_url = os.getenv("NEXT_UI_URL", "http://localhost:3000")
+        st.info(
+            "FEATURE_NEW_UI is enabled. Use the new frontend for active operations: "
+            f"`{new_ui_url}`"
+        )
+    if feature_flags.api_writes:
+        st.warning(
+            "FEATURE_API_WRITES is enabled. Streamlit is in read/observe-only mode; "
+            "run starts, dataset mutations, and manual override writes are disabled."
+        )
+
     dataset_options_by_key = dataset_option_map(dataset_options)
     if selected_dataset_key not in dataset_options_by_key:
         selected_dataset_key = resolve_dataset_selection(dataset_options)
@@ -1879,6 +1901,8 @@ def render() -> None:
             except Exception:
                 st.session_state.model_cache = []
         active_models, run_eligible = pick_models(st.session_state.model_cache)
+        if feature_flags.api_writes:
+            run_eligible = False
         current_mode = sanitize_mode(st.session_state.benchmark_mode)
         mode_label = "Single model" if current_mode == MODE_SINGLE else "Comparison (2 models)"
         selected_models_lines = active_models if active_models else ["-"]
@@ -2046,13 +2070,15 @@ def render() -> None:
     snapshot = runner.snapshot()
 
     run_col, stop_col = st.columns(2)
+    if feature_flags.api_writes:
+        st.info("Start/Stop controls are disabled in Streamlit while API write mode is active.")
     with run_col:
         start_label = "Start Responses" if st.session_state.benchmark_mode == MODE_PAIR else "Start Response"
         if st.button(
             start_label,
             type="primary",
             width='stretch',
-            disabled=(not run_eligible) or snapshot["running"],
+            disabled=(not run_eligible) or snapshot["running"] or feature_flags.api_writes,
         ):
             ok = runner.start(
                 models=active_models,
@@ -2074,7 +2100,7 @@ def render() -> None:
         if st.button(
             "Stop",
             width='stretch',
-            disabled=not snapshot["running"],
+            disabled=(not snapshot["running"]) or feature_flags.api_writes,
         ):
             runner.request_stop()
             st.info("Stop request sent.")
@@ -2238,8 +2264,10 @@ def render() -> None:
                 manual_target = find_result(results, question["id"], model) if model else manual_target
 
             st.subheader("Manual Decision")
+            if feature_flags.api_writes:
+                st.caption("Manual decisions are disabled in Streamlit while API write mode is active.")
             c1, c2, c3 = st.columns(3)
-            can_override = bool(model and manual_target)
+            can_override = bool(model and manual_target) and not feature_flags.api_writes
             if c1.button(
                 "Successful",
                 width='stretch',

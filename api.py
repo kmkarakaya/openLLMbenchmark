@@ -6,6 +6,7 @@ import uuid
 from typing import AsyncIterator
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
@@ -26,9 +27,50 @@ from api_service import (
     upload_dataset,
 )
 from config import get_feature_flags
+from slo_monitor import get_slo_monitor
 
 
 app = FastAPI(title="openLLMbenchmark API", version="v1")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def _is_local_request(request: Request) -> bool:
+    client = request.client
+    host = (client.host if client else "").strip().lower()
+    return host in {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def _raise_if_runs_circuit_open() -> None:
+    snapshot = get_slo_monitor().snapshot()
+    if snapshot.breached:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Runs are temporarily disabled due to SSE SLO breach. "
+                "Set FEATURE_API_RUNS=0, investigate, and recover before re-enabling."
+            ),
+        )
+
+
+def _record_terminal_run_outcome(
+    *,
+    run_id: int,
+    session_id: str,
+    completed: bool,
+    interrupted: bool,
+    error: str,
+) -> None:
+    if not completed:
+        return
+    success = not interrupted and not str(error).strip()
+    run_key = f"{session_id}:{run_id}"
+    get_slo_monitor().register_run_outcome(run_key, success=success)
 
 
 @app.get("/health")
@@ -144,6 +186,7 @@ async def runs(request: Request) -> dict[str, object]:
     flags = get_feature_flags()
     if not flags.api_runs:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API runs are disabled")
+    _raise_if_runs_circuit_open()
 
     body = await request.json()
     session_id = str(body.get("session_id", "")).strip() or uuid.uuid4().hex
@@ -173,50 +216,78 @@ async def runs(request: Request) -> dict[str, object]:
 
 
 @app.get("/runs/{run_id}/events")
-async def run_events(run_id: int, session_id: str = Query(..., min_length=1)) -> EventSourceResponse:
+async def run_events(
+    request: Request,
+    run_id: int,
+    session_id: str = Query(..., min_length=1),
+) -> EventSourceResponse:
     flags = get_feature_flags()
     if not flags.api_runs:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API runs are disabled")
+    _raise_if_runs_circuit_open()
+    monitor = get_slo_monitor()
+    stream_key = f"{session_id}:{run_id}:{uuid.uuid4().hex}"
+    monitor.register_stream_open(stream_key)
 
     async def _event_generator() -> AsyncIterator[dict[str, str]]:
         emitted_started = False
         emitted_completed_for: set[str] = set()
-        while True:
-            snapshot = run_snapshot(session_id=session_id)
-            if int(snapshot.get("run_id", 0)) != run_id:
-                yield {"event": "run_error", "data": json.dumps({"reason": "run_not_found"})}
-                break
+        try:
+            while True:
+                if await request.is_disconnected():
+                    monitor.register_stream_disconnect(stream_key)
+                    break
 
-            if not emitted_started:
-                emitted_started = True
-                yield {"event": "run_started", "data": json.dumps({"run_id": run_id})}
+                snapshot = run_snapshot(session_id=session_id)
+                if int(snapshot.get("run_id", 0)) != run_id:
+                    monitor.register_stream_error(stream_key)
+                    yield {"event": "run_error", "data": json.dumps({"reason": "run_not_found"})}
+                    break
 
-            entries = snapshot.get("entries", [])
-            for entry in entries:
-                model = str(entry.get("model", ""))
-                response = str(entry.get("response", ""))
-                yield {
-                    "event": "chunk",
-                    "data": json.dumps({"run_id": run_id, "model": model, "response": response}),
-                }
-                if bool(entry.get("completed")) and model not in emitted_completed_for:
-                    emitted_completed_for.add(model)
-                    event_name = "run_interrupted" if bool(entry.get("interrupted")) else "entry_completed"
-                    payload = {
-                        "run_id": run_id,
-                        "model": model,
-                        "interrupted": bool(entry.get("interrupted")),
-                        "error": str(entry.get("error", "")),
+                if not emitted_started:
+                    emitted_started = True
+                    yield {"event": "run_started", "data": json.dumps({"run_id": run_id})}
+
+                entries = snapshot.get("entries", [])
+                for entry in entries:
+                    model = str(entry.get("model", ""))
+                    response = str(entry.get("response", ""))
+                    monitor.register_chunk(stream_key)
+                    yield {
+                        "event": "chunk",
+                        "data": json.dumps({"run_id": run_id, "model": model, "response": response}),
                     }
-                    yield {"event": event_name, "data": json.dumps(payload)}
+                    if bool(entry.get("completed")) and model not in emitted_completed_for:
+                        emitted_completed_for.add(model)
+                        event_name = "run_interrupted" if bool(entry.get("interrupted")) else "entry_completed"
+                        payload = {
+                            "run_id": run_id,
+                            "model": model,
+                            "interrupted": bool(entry.get("interrupted")),
+                            "error": str(entry.get("error", "")),
+                        }
+                        yield {"event": event_name, "data": json.dumps(payload)}
 
-            running = bool(snapshot.get("running"))
-            completed = bool(snapshot.get("completed"))
-            if completed and not running:
-                yield {"event": "run_completed", "data": json.dumps({"run_id": run_id})}
-                break
+                running = bool(snapshot.get("running"))
+                completed = bool(snapshot.get("completed"))
+                interrupted = any(bool(item.get("interrupted")) for item in entries)
+                error = next((str(item.get("error", "")) for item in entries if str(item.get("error", "")).strip()), "")
+                if completed and not running:
+                    _record_terminal_run_outcome(
+                        run_id=run_id,
+                        session_id=session_id,
+                        completed=completed,
+                        interrupted=interrupted,
+                        error=error,
+                    )
+                    yield {"event": "run_completed", "data": json.dumps({"run_id": run_id})}
+                    monitor.register_stream_closed(stream_key)
+                    break
 
-            await asyncio.sleep(0.2)
+                await asyncio.sleep(0.2)
+        except Exception:
+            monitor.register_stream_error(stream_key)
+            raise
 
     return EventSourceResponse(_event_generator())
 
@@ -229,6 +300,13 @@ def run_status(run_id: int, session_id: str = Query(..., min_length=1)) -> dict[
     payload = get_run_status(run_id=run_id, session_id=session_id)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+    _record_terminal_run_outcome(
+        run_id=run_id,
+        session_id=session_id,
+        completed=bool(payload.get("completed")),
+        interrupted=bool(payload.get("interrupted")),
+        error=str(payload.get("error", "")),
+    )
     return payload
 
 
@@ -240,6 +318,13 @@ def run_stop(run_id: int, session_id: str = Query(..., min_length=1)) -> dict[st
     del run_id
     stop_run(session_id=session_id)
     return {"status": "stop_requested"}
+
+
+@app.get("/ops/slo")
+def ops_slo(request: Request) -> dict[str, object]:
+    if not _is_local_request(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local/internal endpoint only.")
+    return get_slo_monitor().snapshot().as_dict()
 
 
 @app.patch("/results/manual")

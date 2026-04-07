@@ -93,6 +93,25 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+## API + Frontend MVP (Local/Internal)
+
+Backend API:
+
+```bash
+uvicorn api:app --host 0.0.0.0 --port 8000
+```
+
+Frontend UI:
+
+```bash
+cd frontend
+npm install
+set NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
 ## Local Automation Helper (Windows)
 
 Use `devops_helper.bat` from the repo root:
@@ -131,8 +150,14 @@ Notes:
 - `FEATURE_API_RUNS` (default: `false`)
 - `FEATURE_API_WRITES` (default: `false`)
 - `FEATURE_NEW_UI` (default: `false`)
+- `NEXT_PUBLIC_API_BASE_URL` (frontend runtime API base URL, default `http://localhost:8000`)
 
 If `OLLAMA_API_KEY` is missing at startup, the app asks for it via masked input in the UI.
+
+## Internal Ops Endpoint
+
+- `GET /ops/slo` returns rolling-window SSE SLO metrics and breach state.
+- This endpoint is local/internal only.
 
 ## Version 2 Baseline Fixtures
 

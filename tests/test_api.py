@@ -4,14 +4,25 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
+import api
 from api import app
 import api_service
 from fixtures import load_baseline_fixtures
+from slo_monitor import get_slo_monitor
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(autouse=True)
+def reset_slo_monitor_state() -> None:
+    monitor = get_slo_monitor()
+    monitor.reset()
+    yield
+    monitor.reset()
 
 
 def test_health_returns_v1_schema_lock() -> None:
@@ -75,6 +86,23 @@ def test_runs_endpoint_gated_by_feature_flag(monkeypatch) -> None:
         },
     )
     assert response.status_code == 404
+
+
+def test_runs_endpoint_returns_conflict_when_runner_active(monkeypatch) -> None:
+    monkeypatch.setenv("FEATURE_API_RUNS", "true")
+    monkeypatch.setattr("api.start_run", lambda **_: (None, "conflict"))
+    client = TestClient(app)
+    response = client.post(
+        "/runs",
+        json={
+            "session_id": "s1",
+            "dataset_key": "default_tr",
+            "question_id": "q001",
+            "models": ["gemma3:4b"],
+            "system_prompt": "x",
+        },
+    )
+    assert response.status_code == 409
 
 
 def test_datasets_upload_requires_api_writes(monkeypatch) -> None:
@@ -234,6 +262,96 @@ def test_run_status_returns_snapshot_payload(monkeypatch) -> None:
     assert body["entries"][0]["model"] == "gemma3:4b"
 
 
+def test_run_status_enforces_session_isolation(monkeypatch) -> None:
+    monkeypatch.setenv("FEATURE_API_RUNS", "true")
+    monkeypatch.setattr(
+        "api.get_run_status",
+        lambda run_id, session_id: (
+            {
+                "run_id": run_id,
+                "session_id": session_id,
+                "dataset_key": "default_tr",
+                "question_id": "q001",
+                "running": False,
+                "completed": True,
+                "interrupted": False,
+                "error": "",
+                "entries": [],
+            }
+            if session_id == "sess-1"
+            else None
+        ),
+    )
+    client = TestClient(app)
+    forbidden = client.get("/runs/7/status", params={"session_id": "sess-2"})
+    allowed = client.get("/runs/7/status", params={"session_id": "sess-1"})
+    assert forbidden.status_code == 404
+    assert allowed.status_code == 200
+
+
+def test_run_events_emit_ordered_lifecycle(monkeypatch) -> None:
+    monkeypatch.setenv("FEATURE_API_RUNS", "true")
+    first_snapshot = {
+        "run_id": 9,
+        "running": True,
+        "completed": False,
+        "entries": [
+            {
+                "model": "gemma3:4b",
+                "response": "Mer",
+                "completed": False,
+                "running": True,
+                "interrupted": False,
+                "error": "",
+            }
+        ],
+    }
+    final_snapshot = {
+        "run_id": 9,
+        "running": False,
+        "completed": True,
+        "entries": [
+            {
+                "model": "gemma3:4b",
+                "response": "Merhaba",
+                "completed": True,
+                "running": False,
+                "interrupted": False,
+                "error": "",
+            }
+        ],
+    }
+    snapshots = [first_snapshot, final_snapshot]
+
+    def fake_snapshot(*, session_id: str):  # type: ignore[no-untyped-def]
+        del session_id
+        if snapshots:
+            return snapshots.pop(0)
+        return final_snapshot
+
+    monkeypatch.setattr("api.run_snapshot", fake_snapshot)
+    client = TestClient(app)
+
+    events: list[str] = []
+    with client.stream("GET", "/runs/9/events", params={"session_id": "sess-1"}) as response:
+        assert response.status_code == 200
+        for line in response.iter_lines():
+            if not line:
+                continue
+            if isinstance(line, bytes):
+                line = line.decode("utf-8", errors="ignore")
+            if line.startswith("event:"):
+                events.append(line.split(":", 1)[1].strip())
+            if events and events[-1] == "run_completed":
+                break
+
+    assert "run_started" in events
+    assert "chunk" in events
+    assert "entry_completed" in events
+    assert "run_completed" in events
+    assert events.index("run_started") < events.index("entry_completed") < events.index("run_completed")
+
+
 def test_results_export_supports_json_and_xlsx(monkeypatch) -> None:
     monkeypatch.setenv("FEATURE_API_READS", "true")
     client = TestClient(app)
@@ -374,6 +492,58 @@ def test_manual_results_write_rejects_invalid_status(monkeypatch, tmp_path: Path
         },
     )
     assert response.status_code == 422
+
+
+def test_ops_slo_returns_schema_for_local_requests() -> None:
+    client = TestClient(app)
+    response = client.get("/ops/slo")
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body.keys()) == {
+        "window_minutes",
+        "sse_disconnect_error_rate",
+        "run_completion_success_rate",
+        "p95_chunk_gap_ms",
+        "breached",
+        "evaluated_at",
+    }
+
+
+def test_ops_slo_rejects_non_local_requests(monkeypatch) -> None:
+    monkeypatch.setattr(api, "_is_local_request", lambda request: False)
+    client = TestClient(app)
+    response = client.get("/ops/slo")
+    assert response.status_code == 403
+
+
+def test_runs_endpoint_returns_503_when_slo_breached(monkeypatch) -> None:
+    monitor = get_slo_monitor()
+    monitor.register_stream_open("stream-a")
+    monitor.register_stream_disconnect("stream-a")
+    monkeypatch.setenv("FEATURE_API_RUNS", "true")
+    client = TestClient(app)
+    response = client.post(
+        "/runs",
+        json={
+            "session_id": "s1",
+            "dataset_key": "default_tr",
+            "question_id": "q001",
+            "models": ["gemma3:4b"],
+            "system_prompt": "x",
+        },
+    )
+    assert response.status_code == 503
+    assert "SSE SLO breach" in response.json()["detail"]
+
+
+def test_run_events_endpoint_returns_503_when_slo_breached(monkeypatch) -> None:
+    monitor = get_slo_monitor()
+    monitor.register_stream_open("stream-a")
+    monitor.register_stream_disconnect("stream-a")
+    monkeypatch.setenv("FEATURE_API_RUNS", "true")
+    client = TestClient(app)
+    response = client.get("/runs/1/events", params={"session_id": "s1"})
+    assert response.status_code == 503
 
 
 def test_phase0_baseline_fixtures_exist_and_are_loadable() -> None:

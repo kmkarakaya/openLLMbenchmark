@@ -31,6 +31,30 @@ Implement the risk-reduced Version 2 migration plan in `version2_plan.md` using 
 - Add dataset upload/delete, JSON/Excel export, metadata stats/charts, response render parity.
 - Decommission Streamlit only after all parity and stability checks pass.
 
+## Required Endpoint Scope (Full Parity Target)
+
+Implement these endpoints as explicit deliverables (not implied work):
+
+- `GET /health`
+- `GET /models`
+- `GET /datasets`
+- `GET /datasets/template` (download benchmark JSON template)
+- `POST /datasets/upload` (multipart file upload, validation, save)
+- `DELETE /datasets/{dataset_key}` (uploaded datasets only)
+- `GET /questions?dataset_key=...`
+- `GET /results?dataset_key=...`
+- `GET /results/export?dataset_key=...&format=json|xlsx`
+- `PATCH /results/manual`
+- `POST /runs`
+- `GET /runs/{run_id}/events` (SSE)
+- `GET /runs/{run_id}/status` (reconnect/snapshot state)
+- `POST /runs/{run_id}/stop`
+
+Notes:
+- Endpoint behavior must preserve existing storage/scoring semantics.
+- Export endpoint must match current JSON/Excel output compatibility.
+- `GET /runs/{run_id}/status` is required for robust UI refresh/reconnect behavior.
+
 ## Mandatory Pre-Implementation Locks (Do Not Skip)
 
 1. Single-writer policy

@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --color-bg: #f7fafc;
+  --color-surface: #ffffff;
+  --color-text: #0f172a;
+  --color-muted: #475569;
+  --color-primary: #0b3b66;
+  --color-accent: #0ea5e9;
+  --color-success: #15803d;
+  --color-warning: #b45309;
+  --color-danger: #b91c1c;
+  --color-border: #d1d9e6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  @apply bg-bg text-text font-sans antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  @apply font-heading tracking-tight text-text;
+}
+
+code,
+pre,
+.font-log {
+  @apply font-mono;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.focus-ring {
+  @apply outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg;
+}

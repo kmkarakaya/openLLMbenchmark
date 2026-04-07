@@ -10,3 +10,8 @@ venv/
 .DS_Store
 ~$*.docx
 *.lock
+frontend/node_modules/
+frontend/.next/
+frontend/playwright-report/
+frontend/test-results/
+*.tsbuildinfo
