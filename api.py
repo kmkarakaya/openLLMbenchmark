@@ -255,7 +255,7 @@ async def results_manual(request: Request):
     question_id = str(body.get("question_id", "")).strip()
     model = str(body.get("model", "")).strip()
     override_status = str(body.get("status", "")).strip()
-    reason = str(body.get("reason", "") or "")
+    reason = str(body.get("reason", ""))
     if not dataset_key or not question_id or not model or not override_status:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid manual override payload")
     state, payload = apply_manual_result_override(

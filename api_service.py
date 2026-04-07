@@ -206,7 +206,7 @@ def apply_manual_result_override(
         updated["score"] = selected["score"]
         updated["auto_scored"] = False
         updated["interrupted"] = False
-        updated["reason"] = normalize_reason_text(reason.strip() or str(selected["reason"]))
+        updated["reason"] = normalize_reason_text(reason.strip() or selected["reason"])
         updated["timestamp"] = datetime.now(timezone.utc).isoformat()
         if not str(updated.get("question_prompt_hash", "")).strip():
             prompt = next(
