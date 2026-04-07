@@ -77,8 +77,6 @@ async def datasets_upload(file: UploadFile = File(...)) -> dict[str, object]:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uploaded file is empty.")
     try:
         dataset = upload_dataset(filename=file.filename or "dataset.json", content=payload)
-    except (ValueError, RuntimeError) as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     return {"dataset": dataset}
