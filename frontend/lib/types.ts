@@ -50,6 +50,25 @@ export type ResultsResponse = {
   matrix: Array<Record<string, unknown>>;
 };
 
+export type ResultsTableKey =
+  | "model_leader_board"
+  | "category_level_model_performance"
+  | "hardness_level_model_performance"
+  | "question_level_model_performance"
+  | "response_level_model_performance";
+
+export type DeleteModelResultsSummary = {
+  dataset_key: string;
+  model: string;
+  deleted_count: number;
+  remaining_count: number;
+};
+
+export type DeleteModelResultsResponse = {
+  status: "deleted";
+  summary: DeleteModelResultsSummary;
+};
+
 export type SloStatus = {
   window_minutes: number;
   sse_disconnect_error_rate: number;

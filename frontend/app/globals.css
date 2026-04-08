@@ -34,7 +34,7 @@ h1,
 h2,
 h3,
 h4 {
-  @apply font-heading tracking-tight text-text;
+  @apply font-heading tracking-tight;
 }
 
 code,

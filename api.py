@@ -12,8 +12,10 @@ from sse_starlette.sse import EventSourceResponse
 
 from api_service import (
     apply_manual_result_override,
+    delete_model_results,
     delete_dataset,
     export_results,
+    export_results_table,
     get_datasets,
     get_dataset_template,
     get_health,
@@ -179,6 +181,52 @@ def results_export(
     content, media_type, filename = exported
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return Response(content=content, media_type=media_type, headers=headers)
+
+
+@app.get("/results/table_export")
+def results_table_export(
+    dataset_key: str = Query(..., min_length=1),
+    table: str = Query(..., min_length=1),
+    export_format: str = Query(..., alias="format", pattern="^(json|xlsx)$"),
+) -> Response:
+    flags = get_feature_flags()
+    if not flags.api_reads:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API reads are disabled")
+    state, exported = export_results_table(dataset_key=dataset_key, table_key=table, export_format=export_format)
+    if state == "dataset_not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
+    if state == "table_not_supported":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unknown results table")
+    if state == "format_not_supported":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unsupported export format")
+    if state != "ok" or exported is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Results table export failed")
+    content, media_type, filename = exported
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(content=content, media_type=media_type, headers=headers)
+
+
+@app.delete("/results/model")
+def results_model_delete(
+    dataset_key: str = Query(..., min_length=1),
+    model: str = Query(..., min_length=1),
+) -> dict[str, object]:
+    flags = get_feature_flags()
+    if not flags.api_writes:
+        return JSONResponse(
+            status_code=status.HTTP_423_LOCKED,
+            content={"detail": "API writes disabled; Streamlit remains sole writer."},
+        )
+    state, summary = delete_model_results(dataset_key=dataset_key, model=model)
+    if state == "dataset_not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
+    if state == "model_not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Model results not found for dataset")
+    if state == "invalid_model":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid model")
+    if state != "deleted" or summary is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Model history delete failed")
+    return {"status": "deleted", "summary": summary}
 
 
 @app.post("/runs", status_code=status.HTTP_201_CREATED)

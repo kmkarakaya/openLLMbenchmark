@@ -1,7 +1,9 @@
 import type {
   BenchmarkQuestion,
+  DeleteModelResultsResponse,
   DatasetOption,
   DatasetTemplateRow,
+  ResultsTableKey,
   ResultsResponse,
   RunStartResponse,
   RunStatusResponse,
@@ -148,12 +150,27 @@ export async function deleteDataset(datasetKey: string): Promise<{ status: strin
   );
 }
 
+export async function deleteModelResults(datasetKey: string, model: string): Promise<DeleteModelResultsResponse> {
+  return parseResponse(
+    await fetch(
+      `${API_BASE_URL}/results/model?dataset_key=${encodeURIComponent(datasetKey)}&model=${encodeURIComponent(model)}`,
+      {
+        method: "DELETE"
+      }
+    )
+  );
+}
+
 export async function getDatasetTemplate(): Promise<DatasetTemplateRow[]> {
   return parseResponse(await fetch(`${API_BASE_URL}/datasets/template`, { cache: "no-store" }));
 }
 
 export function exportLink(datasetKey: string, format: "json" | "xlsx"): string {
   return `${API_BASE_URL}/results/export?dataset_key=${encodeURIComponent(datasetKey)}&format=${format}`;
+}
+
+export function tableExportLink(datasetKey: string, table: ResultsTableKey, format: "json" | "xlsx"): string {
+  return `${API_BASE_URL}/results/table_export?dataset_key=${encodeURIComponent(datasetKey)}&table=${encodeURIComponent(table)}&format=${format}`;
 }
 
 export async function getSloStatus(): Promise<SloStatus> {

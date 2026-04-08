@@ -39,6 +39,12 @@ BENCHMARK_PATH = DATA_DIR / "benchmark.json"
 UPLOADED_DATASETS_DIR = DATA_DIR / "uploaded_datasets"
 LOCK_PATH = DATA_DIR / ".persistence.lock"
 
+TABLE_EXPORT_MODEL_LEADERBOARD = "model_leader_board"
+TABLE_EXPORT_CATEGORY_PERFORMANCE = "category_level_model_performance"
+TABLE_EXPORT_HARDNESS_PERFORMANCE = "hardness_level_model_performance"
+TABLE_EXPORT_QUESTION_PERFORMANCE = "question_level_model_performance"
+TABLE_EXPORT_RESPONSE_PERFORMANCE = "response_level_model_performance"
+
 
 def _dataset_option_map() -> dict[str, dict[str, Any]]:
     options = discover_datasets(BENCHMARK_PATH, UPLOADED_DATASETS_DIR)
@@ -165,6 +171,105 @@ def export_results(dataset_key: str, export_format: str) -> tuple[bytes, str, st
             f"{stem}.xlsx",
         )
     raise ValueError("Unsupported export format.")
+
+
+def export_results_table(
+    dataset_key: str,
+    table_key: str,
+    export_format: str,
+) -> tuple[str, tuple[bytes, str, str] | None]:
+    dataset = _dataset_option_map().get(dataset_key)
+    if dataset is None:
+        return "dataset_not_found", None
+
+    results_path, _ = resolve_results_paths(dataset_key, DATA_DIR, ROOT)
+    with portalocker.Lock(str(LOCK_PATH), timeout=10):
+        rows = load_results(results_path)
+
+    if table_key == TABLE_EXPORT_MODEL_LEADERBOARD:
+        table_rows = _table_rows_model_leader_board(rows)
+    elif table_key == TABLE_EXPORT_CATEGORY_PERFORMANCE:
+        table_rows = _table_rows_group_performance(dataset["questions"], rows, group_key="category", fallback_value="GENEL")
+    elif table_key == TABLE_EXPORT_HARDNESS_PERFORMANCE:
+        table_rows = _table_rows_group_performance(dataset["questions"], rows, group_key="hardness_level", fallback_value="(missing)")
+    elif table_key == TABLE_EXPORT_QUESTION_PERFORMANCE:
+        table_rows = _table_rows_question_performance(dataset["questions"], rows)
+    elif table_key == TABLE_EXPORT_RESPONSE_PERFORMANCE:
+        table_rows = rows
+    else:
+        return "table_not_supported", None
+
+    stem = "results" if dataset_key == DEFAULT_DATASET_KEY else f"results_{dataset_key}"
+    filename_stem = f"{stem}_{table_key}"
+    if export_format == "json":
+        return "ok", (prepare_results_json(table_rows), "application/json", f"{filename_stem}.json")
+    if export_format == "xlsx":
+        return (
+            "ok",
+            (
+                prepare_results_excel(table_rows),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                f"{filename_stem}.xlsx",
+            ),
+        )
+    return "format_not_supported", None
+
+
+def _is_row_in_dataset_scope(row: dict[str, Any], *, dataset_key: str, dataset_signature: str) -> bool:
+    row_dataset_key = str(row.get("dataset_key", "") or "").strip()
+    if dataset_key == DEFAULT_DATASET_KEY:
+        return row_dataset_key in {"", DEFAULT_DATASET_KEY}
+    if row_dataset_key != dataset_key:
+        return False
+    return str(row.get("dataset_signature", "") or "").strip() == dataset_signature
+
+
+def delete_model_results(*, dataset_key: str, model: str) -> tuple[str, dict[str, Any] | None]:
+    dataset = _dataset_option_map().get(dataset_key)
+    if dataset is None:
+        return "dataset_not_found", None
+
+    selected_model = model.strip()
+    if not selected_model:
+        return "invalid_model", None
+
+    results_path, results_md_path = resolve_results_paths(dataset_key, DATA_DIR, ROOT)
+    with portalocker.Lock(str(LOCK_PATH), timeout=10):
+        rows = load_results(results_path)
+        kept_rows: list[dict[str, Any]] = []
+        deleted_count = 0
+
+        for row in rows:
+            row_model = str(row.get("model", "")).strip()
+            if row_model != selected_model:
+                kept_rows.append(row)
+                continue
+            if _is_row_in_dataset_scope(row, dataset_key=dataset_key, dataset_signature=str(dataset["signature"])):
+                deleted_count += 1
+                continue
+            kept_rows.append(row)
+
+        if deleted_count == 0:
+            return "model_not_found", None
+
+        save_results(results_path, kept_rows)
+        render_results_markdown(dataset["questions"], kept_rows, results_md_path)
+
+    return "deleted", {
+        "dataset_key": dataset_key,
+        "model": selected_model,
+        "deleted_count": deleted_count,
+        "remaining_count": sum(
+            1
+            for row in kept_rows
+            if str(row.get("model", "")).strip() == selected_model
+            and _is_row_in_dataset_scope(
+                row,
+                dataset_key=dataset_key,
+                dataset_signature=str(dataset["signature"]),
+            )
+        ),
+    }
 
 
 def apply_manual_result_override(
@@ -310,6 +415,89 @@ def _build_matrix(questions: list[dict[str, Any]], results: list[dict[str, Any]]
             row["cells"][model] = _format_matrix_cell(indexed.get((question_id, model)))
         matrix.append(row)
     return matrix
+
+
+def _table_rows_model_leader_board(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    metrics = compute_model_metrics(results)
+    output: list[dict[str, Any]] = []
+    for row in metrics:
+        median_ms = row.get("median_ms")
+        median_seconds = round(float(median_ms) / 1000.0, 2) if median_ms is not None else None
+        output.append(
+            {
+                "model": str(row.get("model", "")),
+                "accuracy_percent": round(float(row.get("accuracy_percent", 0.0)), 1),
+                "speed_score": round(float(row.get("latency_score", 0.0)), 1),
+                "success_scored": f"{int(row.get('success_count', 0))}/{int(row.get('scored_count', 0))}",
+                "median_seconds": median_seconds,
+            }
+        )
+    return output
+
+
+def _table_rows_group_performance(
+    questions: list[dict[str, Any]],
+    results: list[dict[str, Any]],
+    *,
+    group_key: str,
+    fallback_value: str,
+) -> list[dict[str, Any]]:
+    question_to_group: dict[str, str] = {}
+    group_counts: dict[str, int] = {}
+    for question in questions:
+        question_id = str(question.get("id", "")).strip()
+        group_value = str(question.get(group_key, "")).strip() or fallback_value
+        if question_id:
+            question_to_group[question_id] = group_value
+        group_counts[group_value] = group_counts.get(group_value, 0) + 1
+
+    models = sorted({str(row.get("model", "")).strip() for row in results if str(row.get("model", "")).strip()})
+    counters: dict[str, dict[str, dict[str, int]]] = {}
+    for row in results:
+        model = str(row.get("model", "")).strip()
+        question_id = str(row.get("question_id", "")).strip()
+        status = str(row.get("status", "")).strip()
+        if not model or not question_id:
+            continue
+        group_value = question_to_group.get(question_id, fallback_value)
+        group_bucket = counters.setdefault(group_value, {})
+        model_bucket = group_bucket.setdefault(model, {"success": 0, "scored": 0})
+        if status in {"success", "fail"}:
+            model_bucket["scored"] += 1
+            if status == "success":
+                model_bucket["success"] += 1
+
+    output: list[dict[str, Any]] = []
+    for group_value in sorted(group_counts.keys()):
+        row: dict[str, Any] = {
+            group_key: group_value,
+            "questions": int(group_counts.get(group_value, 0)),
+        }
+        for model in models:
+            model_counter = counters.get(group_value, {}).get(model, {"success": 0, "scored": 0})
+            scored = int(model_counter.get("scored", 0))
+            if scored == 0:
+                row[model] = None
+            else:
+                row[model] = round((100.0 * int(model_counter.get("success", 0))) / scored, 1)
+        output.append(row)
+    return output
+
+
+def _table_rows_question_performance(questions: list[dict[str, Any]], results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    matrix = _build_matrix(questions, results)
+    output: list[dict[str, Any]] = []
+    for row in matrix:
+        item: dict[str, Any] = {
+            "question_id": str(row.get("question_id", "")),
+            "category": str(row.get("category", "")),
+        }
+        cells = row.get("cells", {})
+        if isinstance(cells, dict):
+            for model, value in cells.items():
+                item[str(model)] = value
+        output.append(item)
+    return output
 
 
 def _format_matrix_cell(record: dict[str, Any] | None) -> str:

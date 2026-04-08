@@ -10,10 +10,32 @@ import { Field } from "../../components/field";
 import { LoadingSkeleton } from "../../components/loading-skeleton";
 import { Select } from "../../components/select";
 import { useToast } from "../../components/toast-host";
-import { exportLink, getDatasets, getQuestions, getResults, isApiDisabledError } from "../../lib/api";
+import {
+  deleteModelResults,
+  exportLink,
+  getDatasets,
+  getQuestions,
+  getResults,
+  isApiDisabledError,
+  tableExportLink
+} from "../../lib/api";
 import { useAppState } from "../../lib/app-state";
-import type { BenchmarkQuestion, DatasetOption, ResultsResponse } from "../../lib/types";
-import { buildMetadataDistributions, mapMatrix, mapMetrics } from "../../lib/view-models";
+import type { BenchmarkQuestion, DatasetOption, ResultsResponse, ResultsTableKey } from "../../lib/types";
+import {
+  buildCategoryModelPerformance,
+  buildHardnessModelPerformance,
+  buildMetadataDistributions,
+  mapMatrix,
+  mapMetrics
+} from "../../lib/view-models";
+
+const TABLE_LABELS: Record<ResultsTableKey, string> = {
+  model_leader_board: "Model Leader Board",
+  category_level_model_performance: "Category-Level Model Performance",
+  hardness_level_model_performance: "Hardness-Level Model Performance",
+  question_level_model_performance: "Question-Level Model Performance",
+  response_level_model_performance: "Response-Level Model Performance"
+};
 
 export default function ResultsPage() {
   const { config, setConfig } = useAppState();
@@ -24,12 +46,18 @@ export default function ResultsPage() {
   const [results, setResults] = useState<ResultsResponse | null>(null);
   const [questions, setQuestions] = useState<BenchmarkQuestion[]>([]);
   const [readsDisabled, setReadsDisabled] = useState(false);
+  const [modelToDelete, setModelToDelete] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [deletingModel, setDeletingModel] = useState(false);
   const [lastExport, setLastExport] = useState<{
     format: "json" | "xlsx";
     at: string;
     datasetKey: string;
+    scope: "dataset" | ResultsTableKey;
     status: "requested";
   } | null>(null);
+  const [openTableExport, setOpenTableExport] = useState<ResultsTableKey | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const metrics = useMemo(() => mapMetrics(results), [results]);
   const matrixRows = useMemo(() => mapMatrix(results), [results]);
@@ -42,7 +70,33 @@ export default function ResultsPage() {
       ),
     [matrixRows]
   );
+  const categoryPerformance = useMemo(
+    () => buildCategoryModelPerformance(questions, results),
+    [questions, results]
+  );
+  const hardnessPerformance = useMemo(
+    () => buildHardnessModelPerformance(questions, results),
+    [questions, results]
+  );
+  const availableResultModels = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (results?.results ?? [])
+            .map((row) => String((row as Record<string, unknown>).model ?? "").trim())
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b)),
+    [results]
+  );
   const metadata = useMemo(() => buildMetadataDistributions(questions), [questions]);
+
+  const loadDatasetSnapshot = async (datasetKey: string): Promise<ResultsResponse> => {
+    const [resultsPayload, questionPayload] = await Promise.all([getResults(datasetKey), getQuestions(datasetKey)]);
+    setResults(resultsPayload);
+    setQuestions(questionPayload.questions);
+    return resultsPayload;
+  };
 
   useEffect(() => {
     let active = true;
@@ -65,10 +119,7 @@ export default function ResultsPage() {
           setQuestions([]);
           return;
         }
-        const [resultsPayload, questionPayload] = await Promise.all([
-          getResults(selectedDataset),
-          getQuestions(selectedDataset)
-        ]);
+        const [resultsPayload, questionPayload] = await Promise.all([getResults(selectedDataset), getQuestions(selectedDataset)]);
         if (!active) {
           return;
         }
@@ -98,10 +149,9 @@ export default function ResultsPage() {
     setConfig({ datasetKey });
     setLoading(true);
     setError("");
+    setDeleteError("");
     try {
-      const [resultsPayload, questionPayload] = await Promise.all([getResults(datasetKey), getQuestions(datasetKey)]);
-      setResults(resultsPayload);
-      setQuestions(questionPayload.questions);
+      await loadDatasetSnapshot(datasetKey);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : String(exc));
     } finally {
@@ -109,10 +159,165 @@ export default function ResultsPage() {
     }
   };
 
+  useEffect(() => {
+    if (!availableResultModels.length) {
+      if (modelToDelete) {
+        setModelToDelete("");
+      }
+      return;
+    }
+    if (!modelToDelete || !availableResultModels.includes(modelToDelete)) {
+      setModelToDelete(availableResultModels[0]);
+    }
+  }, [availableResultModels, modelToDelete]);
+
   const onExportClick = (format: "json" | "xlsx") => {
     const at = new Date().toISOString();
-    setLastExport({ format, at, datasetKey: config.datasetKey, status: "requested" });
+    setLastExport({ format, at, datasetKey: config.datasetKey, scope: "dataset", status: "requested" });
     pushToast("info", `Export requested: ${format.toUpperCase()} for ${config.datasetKey}`);
+  };
+
+  const onTableExportClick = (table: ResultsTableKey, format: "json" | "xlsx") => {
+    const at = new Date().toISOString();
+    setLastExport({ format, at, datasetKey: config.datasetKey, scope: table, status: "requested" });
+    setOpenTableExport(null);
+    pushToast("info", `Export requested: ${TABLE_LABELS[table]} (${format.toUpperCase()})`);
+  };
+
+  const extractFilename = (headerValue: string | null, fallback: string): string => {
+    if (!headerValue) {
+      return fallback;
+    }
+    const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(headerValue);
+    if (utf8Match && utf8Match[1]) {
+      return decodeURIComponent(utf8Match[1]);
+    }
+    const simpleMatch = /filename="([^"]+)"/i.exec(headerValue) ?? /filename=([^;]+)/i.exec(headerValue);
+    if (simpleMatch && simpleMatch[1]) {
+      return simpleMatch[1].trim();
+    }
+    return fallback;
+  };
+
+  const requestAndDownload = async (url: string, fallbackFilename: string) => {
+    if (isExporting) {
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const response = await fetch(url, { method: "GET" });
+      if (!response.ok) {
+        let detail = `Export failed (${response.status})`;
+        try {
+          const payload = (await response.json()) as { detail?: string };
+          if (payload.detail) {
+            detail = payload.detail;
+          }
+        } catch {
+          // keep default detail
+        }
+        if (response.status === 404) {
+          detail = `${detail}. If this endpoint is newly added, restart backend and retry.`;
+        }
+        throw new Error(detail);
+      }
+      const blob = await response.blob();
+      const filename = extractFilename(response.headers.get("content-disposition"), fallbackFilename);
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(objectUrl);
+    } catch (exc) {
+      const message = exc instanceof Error ? exc.message : String(exc);
+      pushToast("danger", message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const renderTableExportActions = (table: ResultsTableKey) => {
+    if (openTableExport !== table) {
+      return (
+        <button
+          type="button"
+          className="focus-ring rounded-ui border border-border bg-white px-3 py-1.5 text-xs font-semibold hover:border-primary/40 hover:bg-primary/5"
+          onClick={() => setOpenTableExport(table)}
+          data-testid={`results-export-open-${table}`}
+        >
+          Export
+        </button>
+      );
+    }
+    return (
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <a
+          className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs font-semibold hover:border-primary/40 hover:bg-primary/5"
+          href={tableExportLink(config.datasetKey, table, "json")}
+          onClick={(event) => {
+            event.preventDefault();
+            onTableExportClick(table, "json");
+            void requestAndDownload(
+              tableExportLink(config.datasetKey, table, "json"),
+              `${config.datasetKey}_${table}.json`
+            );
+          }}
+          data-testid={`results-export-json-${table}`}
+        >
+          JSON
+        </a>
+        <a
+          className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs font-semibold hover:border-primary/40 hover:bg-primary/5"
+          href={tableExportLink(config.datasetKey, table, "xlsx")}
+          onClick={(event) => {
+            event.preventDefault();
+            onTableExportClick(table, "xlsx");
+            void requestAndDownload(
+              tableExportLink(config.datasetKey, table, "xlsx"),
+              `${config.datasetKey}_${table}.xlsx`
+            );
+          }}
+          data-testid={`results-export-xlsx-${table}`}
+        >
+          Excel
+        </a>
+        <button
+          type="button"
+          className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs hover:bg-slate-100"
+          onClick={() => setOpenTableExport(null)}
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  };
+
+  const onDeleteModelHistory = async () => {
+    if (!modelToDelete || deletingModel) {
+      return;
+    }
+    const confirmed = window.confirm(
+      `Delete all saved responses for "${modelToDelete}" in dataset "${config.datasetKey}"? This cannot be undone.`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setDeletingModel(true);
+    setDeleteError("");
+    try {
+      const response = await deleteModelResults(config.datasetKey, modelToDelete);
+      await loadDatasetSnapshot(config.datasetKey);
+      pushToast("success", `Deleted ${response.summary.deleted_count} records for ${response.summary.model}.`);
+    } catch (exc) {
+      const message = exc instanceof Error ? exc.message : String(exc);
+      setDeleteError(message);
+      pushToast("danger", message);
+    } finally {
+      setDeletingModel(false);
+    }
   };
 
   if (loading) {
@@ -172,8 +377,8 @@ export default function ResultsPage() {
         <p className="mt-1 text-sm text-muted">Metrics, question matrix, and detailed model outputs.</p>
       </header>
 
-      <Card title="Scope">
-        <div className="grid gap-4 md:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
+      <section className="grid items-stretch gap-4 lg:grid-cols-2">
+        <Card title="Select Dataset" className="h-full">
           <Field label="Dataset">
             <Select value={config.datasetKey} onChange={(event) => void onDatasetChange(event.target.value)}>
               {datasets.map((item) => (
@@ -183,15 +388,23 @@ export default function ResultsPage() {
               ))}
             </Select>
           </Field>
+        </Card>
+
+        <Card title="Actions" className="h-full">
           <div className="rounded-ui border border-border bg-slate-50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Export Results</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Export Raw Results</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <a
                 className="focus-ring inline-flex items-center gap-2 rounded-ui border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-primary/40 hover:bg-primary/5"
                 href={exportLink(config.datasetKey, "json")}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => onExportClick("json")}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onExportClick("json");
+                  void requestAndDownload(
+                    exportLink(config.datasetKey, "json"),
+                    `${config.datasetKey}_raw_results.json`
+                  );
+                }}
               >
                 <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-border bg-slate-50 text-[10px] font-bold">J</span>
                 Export JSON
@@ -199,9 +412,14 @@ export default function ResultsPage() {
               <a
                 className="focus-ring inline-flex items-center gap-2 rounded-ui border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-primary/40 hover:bg-primary/5"
                 href={exportLink(config.datasetKey, "xlsx")}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => onExportClick("xlsx")}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onExportClick("xlsx");
+                  void requestAndDownload(
+                    exportLink(config.datasetKey, "xlsx"),
+                    `${config.datasetKey}_raw_results.xlsx`
+                  );
+                }}
               >
                 <span className="inline-flex h-5 w-5 items-center justify-center rounded border border-border bg-slate-50 text-[10px] font-bold">X</span>
                 Export Excel
@@ -214,7 +432,9 @@ export default function ResultsPage() {
                     {lastExport.status.toUpperCase()}
                   </span>
                   <span>
-                    Last export requested: {lastExport.format.toUpperCase()} | Dataset: {lastExport.datasetKey}
+                    Last export requested:{" "}
+                    {lastExport.scope === "dataset" ? "All Results" : TABLE_LABELS[lastExport.scope]} ({lastExport.format.toUpperCase()}) |
+                    {" "}Dataset: {lastExport.datasetKey}
                   </span>
                   <span className="font-log">{new Date(lastExport.at).toLocaleString()}</span>
                 </div>
@@ -222,21 +442,75 @@ export default function ResultsPage() {
                 <span className="text-muted">No export request yet in this session.</span>
               )}
             </div>
+            <div className="mt-3 rounded-ui border border-danger/30 bg-rose-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-danger">Remove model history</p>
+              <p className="mt-1 text-xs text-muted">Delete all saved responses for one model in this selected dataset.</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Select
+                  value={modelToDelete}
+                  onChange={(event) => setModelToDelete(event.target.value)}
+                  disabled={!availableResultModels.length || deletingModel}
+                  data-testid="results-delete-model-select"
+                >
+                  {!availableResultModels.length ? <option value="">No model history found</option> : null}
+                  {availableResultModels.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </Select>
+                <button
+                  type="button"
+                  className="focus-ring rounded-ui border border-danger bg-danger px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => void onDeleteModelHistory()}
+                  disabled={!modelToDelete || !availableResultModels.length || deletingModel}
+                  data-testid="results-delete-model-button"
+                >
+                  {deletingModel ? "Deleting..." : "Delete Model History"}
+                </button>
+              </div>
+              {deleteError ? <p className="mt-2 text-xs text-danger">{deleteError}</p> : null}
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <Card title="Model Metrics">
+        <Card title="Model Leader Board" actions={renderTableExportActions("model_leader_board")}>
           <DataTable
             rows={metrics}
             emptyMessage="No metrics available for this dataset yet."
             columns={[
-              { key: "model", header: "Model", render: (row) => row.model },
-              { key: "accuracy", header: "Accuracy %", render: (row) => row.accuracyPercent.toFixed(1) },
-              { key: "speed", header: "Speed Score", render: (row) => row.latencyScore.toFixed(1) },
-              { key: "success", header: "Success/Scored", render: (row) => row.successOverScored },
-              { key: "median", header: "Median (s)", render: (row) => row.medianSeconds?.toFixed(2) ?? "-" }
+              {
+                key: "model",
+                header: "Model",
+                headerHelp: "Evaluated Ollama model name. This column is not a higher/lower-is-better metric.",
+                render: (row) => row.model
+              },
+              {
+                key: "accuracy",
+                header: "Accuracy %",
+                headerHelp: "(Successful answers / scored questions) x 100. Higher is better.",
+                render: (row) => row.accuracyPercent.toFixed(1)
+              },
+              {
+                key: "speed",
+                header: "Speed Score",
+                headerHelp: "Speed score normalized by the fastest model median (0-100). Higher is better.",
+                render: (row) => row.latencyScore.toFixed(1)
+              },
+              {
+                key: "success",
+                header: "Success/Scored",
+                headerHelp: "Successful answers / total scored questions. This column is not a higher/lower-is-better metric.",
+                render: (row) => row.successOverScored
+              },
+              {
+                key: "median",
+                header: "Median (s)",
+                headerHelp: "Median response time in seconds. Lower is better.",
+                render: (row) => row.medianSeconds?.toFixed(2) ?? "-"
+              }
             ]}
           />
         </Card>
@@ -283,7 +557,47 @@ export default function ResultsPage() {
         </Card>
       </section>
 
-      <Card title="Question-Level Matrix">
+      <Card title="Category-Level Model Performance" actions={renderTableExportActions("category_level_model_performance")}>
+        <DataTable
+          rows={categoryPerformance.rows}
+          emptyMessage="No category-level performance available yet."
+          columns={[
+            { key: "category", header: "Category", render: (row) => row.group || "-" },
+            { key: "count", header: "Questions", render: (row) => String(row.questionCount) },
+            ...categoryPerformance.models.map((model) => ({
+              key: model,
+              header: model,
+              headerHelp: "Category-level accuracy for this model based on scored results (success/fail).",
+              render: (row: (typeof categoryPerformance.rows)[number]) => {
+                const value = row.accuracies[model];
+                return typeof value === "number" ? `${value.toFixed(1)}%` : "-";
+              }
+            }))
+          ]}
+        />
+      </Card>
+
+      <Card title="Hardness-Level Model Performance" actions={renderTableExportActions("hardness_level_model_performance")}>
+        <DataTable
+          rows={hardnessPerformance.rows}
+          emptyMessage="No hardness-level performance available yet."
+          columns={[
+            { key: "hardness", header: "Hardness", render: (row) => row.group || "-" },
+            { key: "count", header: "Questions", render: (row) => String(row.questionCount) },
+            ...hardnessPerformance.models.map((model) => ({
+              key: model,
+              header: model,
+              headerHelp: "Hardness-level accuracy for this model based on scored results (success/fail).",
+              render: (row: (typeof hardnessPerformance.rows)[number]) => {
+                const value = row.accuracies[model];
+                return typeof value === "number" ? `${value.toFixed(1)}%` : "-";
+              }
+            }))
+          ]}
+        />
+      </Card>
+
+      <Card title="Question-Level Model Performance" actions={renderTableExportActions("question_level_model_performance")}>
         <DataTable
           rows={matrixRows}
           emptyMessage="No matrix rows available yet."
@@ -299,7 +613,7 @@ export default function ResultsPage() {
         />
       </Card>
 
-      <Card title="Per-Model Response Details">
+      <Card title="Response-Level Model Performance" actions={renderTableExportActions("response_level_model_performance")}>
         <DataTable
           rows={results?.results ?? []}
           emptyMessage="No detailed responses available yet."

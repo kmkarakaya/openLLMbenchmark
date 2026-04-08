@@ -365,6 +365,220 @@ def test_results_export_supports_json_and_xlsx(monkeypatch) -> None:
     assert "results.xlsx" in xlsx_response.headers.get("content-disposition", "")
 
 
+def test_results_table_export_supports_json_and_xlsx(monkeypatch) -> None:
+    monkeypatch.setenv("FEATURE_API_READS", "true")
+    client = TestClient(app)
+    json_response = client.get(
+        "/results/table_export",
+        params={
+            "dataset_key": "default_tr",
+            "table": "model_leader_board",
+            "format": "json",
+        },
+    )
+    xlsx_response = client.get(
+        "/results/table_export",
+        params={
+            "dataset_key": "default_tr",
+            "table": "model_leader_board",
+            "format": "xlsx",
+        },
+    )
+    assert json_response.status_code == 200
+    assert json_response.headers["content-type"].startswith("application/json")
+    assert "results_model_leader_board.json" in json_response.headers.get("content-disposition", "")
+    assert xlsx_response.status_code == 200
+    assert "spreadsheetml" in xlsx_response.headers["content-type"]
+    assert "results_model_leader_board.xlsx" in xlsx_response.headers.get("content-disposition", "")
+
+
+def test_results_table_export_returns_404_for_unknown_dataset(monkeypatch) -> None:
+    monkeypatch.setenv("FEATURE_API_READS", "true")
+    client = TestClient(app)
+    response = client.get(
+        "/results/table_export",
+        params={
+            "dataset_key": "unknown",
+            "table": "model_leader_board",
+            "format": "json",
+        },
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Unknown dataset"
+
+
+def test_results_table_export_rejects_unknown_table(monkeypatch) -> None:
+    monkeypatch.setenv("FEATURE_API_READS", "true")
+    client = TestClient(app)
+    response = client.get(
+        "/results/table_export",
+        params={
+            "dataset_key": "default_tr",
+            "table": "not_a_table",
+            "format": "json",
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unknown results table"
+
+
+def test_results_model_delete_endpoint_locked_while_api_writes_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("FEATURE_API_WRITES", "false")
+    client = TestClient(app)
+    response = client.delete("/results/model", params={"dataset_key": "default_tr", "model": "gemma3:4b"})
+    assert response.status_code == 423
+
+
+def test_results_model_delete_returns_404_for_unknown_dataset(monkeypatch) -> None:
+    monkeypatch.setenv("FEATURE_API_WRITES", "true")
+    monkeypatch.setattr(api_service, "_dataset_option_map", lambda: {})
+    client = TestClient(app)
+    response = client.delete("/results/model", params={"dataset_key": "unknown", "model": "gemma3:4b"})
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Unknown dataset"
+
+
+def test_results_model_delete_returns_404_when_model_not_found(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FEATURE_API_WRITES", "true")
+    data_dir = tmp_path / "data"
+    root_dir = tmp_path
+    data_dir.mkdir(parents=True, exist_ok=True)
+    results_dir = data_dir / "results_by_dataset"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    results_path = results_dir / "uploaded-demo.json"
+    results_path.write_text(
+        json.dumps(
+            [
+                {
+                    "dataset_key": "uploaded_demo",
+                    "dataset_signature": "sig-123",
+                    "question_id": "q001",
+                    "model": "qwen3:8b",
+                    "status": "success",
+                }
+            ],
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api_service, "DATA_DIR", data_dir)
+    monkeypatch.setattr(api_service, "ROOT", root_dir)
+    monkeypatch.setattr(
+        api_service,
+        "_dataset_option_map",
+        lambda: {
+            "uploaded_demo": {
+                "key": "uploaded_demo",
+                "label": "Uploaded",
+                "is_default": False,
+                "path": tmp_path / "uploaded-demo-dataset.json",
+                "signature": "sig-123",
+                "instruction": "",
+                "questions": [{"id": "q001", "prompt": "Prompt text"}],
+            }
+        },
+    )
+    client = TestClient(app)
+    response = client.delete("/results/model", params={"dataset_key": "uploaded_demo", "model": "gemma3:4b"})
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Model results not found for dataset"
+
+
+def test_results_model_delete_removes_only_target_model_rows(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FEATURE_API_WRITES", "true")
+    data_dir = tmp_path / "data"
+    root_dir = tmp_path
+    data_dir.mkdir(parents=True, exist_ok=True)
+    results_dir = data_dir / "results_by_dataset"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    results_path = results_dir / "uploaded-demo.json"
+    results_path.write_text(
+        json.dumps(
+            [
+                {
+                    "dataset_key": "uploaded_demo",
+                    "dataset_signature": "sig-123",
+                    "question_id": "q001",
+                    "model": "gemma3:4b",
+                    "status": "success",
+                    "response_time_ms": 1200,
+                },
+                {
+                    "dataset_key": "uploaded_demo",
+                    "dataset_signature": "sig-123",
+                    "question_id": "q002",
+                    "model": "gemma3:4b",
+                    "status": "fail",
+                    "response_time_ms": 1400,
+                },
+                {
+                    "dataset_key": "uploaded_demo",
+                    "dataset_signature": "sig-123",
+                    "question_id": "q001",
+                    "model": "qwen3:8b",
+                    "status": "success",
+                    "response_time_ms": 900,
+                },
+                {
+                    "dataset_key": "another_dataset",
+                    "dataset_signature": "sig-other",
+                    "question_id": "q001",
+                    "model": "gemma3:4b",
+                    "status": "success",
+                    "response_time_ms": 500,
+                },
+            ],
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api_service, "DATA_DIR", data_dir)
+    monkeypatch.setattr(api_service, "ROOT", root_dir)
+    monkeypatch.setattr(
+        api_service,
+        "_dataset_option_map",
+        lambda: {
+            "uploaded_demo": {
+                "key": "uploaded_demo",
+                "label": "Uploaded",
+                "is_default": False,
+                "path": tmp_path / "uploaded-demo-dataset.json",
+                "signature": "sig-123",
+                "instruction": "",
+                "questions": [
+                    {"id": "q001", "prompt": "Prompt text 1"},
+                    {"id": "q002", "prompt": "Prompt text 2"},
+                ],
+            }
+        },
+    )
+    client = TestClient(app)
+    response = client.delete("/results/model", params={"dataset_key": "uploaded_demo", "model": "gemma3:4b"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "deleted"
+    assert body["summary"]["dataset_key"] == "uploaded_demo"
+    assert body["summary"]["model"] == "gemma3:4b"
+    assert body["summary"]["deleted_count"] == 2
+    assert body["summary"]["remaining_count"] == 0
+
+    persisted = json.loads(results_path.read_text(encoding="utf-8"))
+    assert len(persisted) == 2
+    assert all(
+        not (
+            item.get("dataset_key") == "uploaded_demo"
+            and item.get("dataset_signature") == "sig-123"
+            and item.get("model") == "gemma3:4b"
+        )
+        for item in persisted
+    )
+    assert any(item.get("model") == "qwen3:8b" for item in persisted)
+    assert any(item.get("dataset_key") == "another_dataset" for item in persisted)
+    assert (results_dir / "uploaded-demo.md").exists()
+
+
 def test_manual_results_write_endpoint_locked_while_api_writes_disabled(monkeypatch) -> None:
     monkeypatch.setenv("FEATURE_API_WRITES", "false")
     client = TestClient(app)

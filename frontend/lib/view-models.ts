@@ -23,6 +23,12 @@ export type UiDistributionRow = {
   percent: number;
 };
 
+export type UiCategoryPerformanceRow = {
+  group: string;
+  questionCount: number;
+  accuracies: Record<string, number | null>;
+};
+
 export function resolveActiveModels(config: BenchmarkConfig): string[] {
   const model1 = (config.model1 || "").trim();
   const model2 = (config.model2 || "").trim();
@@ -77,6 +83,104 @@ export function mapMatrix(results: ResultsResponse | null): UiMatrixRow[] {
       cells
     };
   });
+}
+
+function buildGroupedModelPerformance(
+  questions: BenchmarkQuestion[],
+  results: ResultsResponse | null,
+  groupBy: (question: BenchmarkQuestion) => string
+): { rows: UiCategoryPerformanceRow[]; models: string[] } {
+  if (!results) {
+    return { rows: [], models: [] };
+  }
+
+  const questionToGroup = new Map<string, string>();
+  const groupQuestionCounts = new Map<string, number>();
+  questions.forEach((question) => {
+    const questionId = String(question.id ?? "").trim();
+    const group = groupBy(question).trim() || "(missing)";
+    if (questionId) {
+      questionToGroup.set(questionId, group);
+    }
+    groupQuestionCounts.set(group, (groupQuestionCounts.get(group) ?? 0) + 1);
+  });
+
+  const models = Array.from(
+    new Set(
+      results.results
+        .map((row) => String((row as Record<string, unknown>).model ?? "").trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  type Counter = { success: number; scored: number };
+  const counters = new Map<string, Map<string, Counter>>();
+
+  for (const row of results.results) {
+    const record = row as Record<string, unknown>;
+    const model = String(record.model ?? "").trim();
+    const questionId = String(record.question_id ?? "").trim();
+    const status = String(record.status ?? "").trim();
+    if (!model || !questionId) {
+      continue;
+    }
+    const group = questionToGroup.get(questionId) ?? "(missing)";
+    if (!counters.has(group)) {
+      counters.set(group, new Map<string, Counter>());
+    }
+    const byModel = counters.get(group);
+    if (!byModel) {
+      continue;
+    }
+    if (!byModel.has(model)) {
+      byModel.set(model, { success: 0, scored: 0 });
+    }
+    const counter = byModel.get(model);
+    if (!counter) {
+      continue;
+    }
+    if (status === "success" || status === "fail") {
+      counter.scored += 1;
+      if (status === "success") {
+        counter.success += 1;
+      }
+    }
+  }
+
+  const groups = Array.from(groupQuestionCounts.keys()).sort((a, b) => a.localeCompare(b));
+  const rows: UiCategoryPerformanceRow[] = groups.map((group) => {
+    const byModel = counters.get(group) ?? new Map<string, Counter>();
+    const accuracies: Record<string, number | null> = {};
+    models.forEach((model) => {
+      const count = byModel.get(model);
+      if (!count || count.scored === 0) {
+        accuracies[model] = null;
+      } else {
+        accuracies[model] = Number(((count.success * 100) / count.scored).toFixed(1));
+      }
+    });
+    return {
+      group,
+      questionCount: groupQuestionCounts.get(group) ?? 0,
+      accuracies
+    };
+  });
+
+  return { rows, models };
+}
+
+export function buildCategoryModelPerformance(
+  questions: BenchmarkQuestion[],
+  results: ResultsResponse | null
+): { rows: UiCategoryPerformanceRow[]; models: string[] } {
+  return buildGroupedModelPerformance(questions, results, (question) => String(question.category ?? "GENEL"));
+}
+
+export function buildHardnessModelPerformance(
+  questions: BenchmarkQuestion[],
+  results: ResultsResponse | null
+): { rows: UiCategoryPerformanceRow[]; models: string[] } {
+  return buildGroupedModelPerformance(questions, results, (question) => String(question.hardness_level ?? "(missing)"));
 }
 
 function distribution(values: string[]): UiDistributionRow[] {

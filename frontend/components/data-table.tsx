@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 export type DataTableColumn<T> = {
   key: string;
   header: string;
+  headerHelp?: string;
   render: (row: T) => ReactNode;
 };
 
@@ -25,7 +26,18 @@ export function DataTable<T>({
           <tr>
             {columns.map((column) => (
               <th key={column.key} className="border-b border-border px-3 py-2 text-left text-xs font-semibold uppercase text-muted">
-                {column.header}
+                <span className="inline-flex items-center gap-1">
+                  <span>{column.header}</span>
+                  {column.headerHelp ? (
+                    <span
+                      title={column.headerHelp}
+                      aria-label={`${column.header} help: ${column.headerHelp}`}
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border bg-white text-[10px] font-bold text-muted"
+                    >
+                      i
+                    </span>
+                  ) : null}
+                </span>
               </th>
             ))}
           </tr>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Card } from "../../components/card";
@@ -7,10 +8,76 @@ import { EmptyState } from "../../components/empty-state";
 import { ErrorState } from "../../components/error-state";
 import { StatusBanner } from "../../components/status-banner";
 import { useToast } from "../../components/toast-host";
-import { ApiError, applyManualDecision, getQuestions, getRunStatus, runEventsUrl, startRun, stopRun } from "../../lib/api";
+import { ApiError, applyManualDecision, getQuestions, getResults, getRunStatus, runEventsUrl, startRun, stopRun } from "../../lib/api";
 import { useAppState } from "../../lib/app-state";
 import type { BenchmarkQuestion, RunStatusResponse } from "../../lib/types";
 import { hasModelSelectionError, resolveActiveModels, runStateFromStatus } from "../../lib/view-models";
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function applyInlineMarkdown(text: string): string {
+  return text
+    .replace(/`([^`]+)`/g, "<code class=\"rounded bg-slate-100 px-1 py-0.5\">$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+}
+
+function markdownToSafeHtml(markdown: string): string {
+  const escaped = escapeHtml(markdown || "");
+  const blocks = escaped.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+  if (!blocks.length) {
+    return "<p class=\"text-muted\">No response yet.</p>";
+  }
+  return blocks
+    .map((block) => {
+      if (block.startsWith("### ")) {
+        return `<h3 class="mt-2 text-sm font-semibold">${applyInlineMarkdown(block.slice(4))}</h3>`;
+      }
+      if (block.startsWith("## ")) {
+        return `<h2 class="mt-2 text-base font-semibold">${applyInlineMarkdown(block.slice(3))}</h2>`;
+      }
+      if (block.startsWith("# ")) {
+        return `<h1 class="mt-2 text-lg font-semibold">${applyInlineMarkdown(block.slice(2))}</h1>`;
+      }
+      const lines = block.split("\n").map((line) => line.trimEnd());
+      if (lines.every((line) => /^[-*]\s+/.test(line))) {
+        const items = lines.map((line) => `<li>${applyInlineMarkdown(line.replace(/^[-*]\s+/, ""))}</li>`).join("");
+        return `<ul class="list-disc pl-5">${items}</ul>`;
+      }
+      return `<p>${applyInlineMarkdown(block.replace(/\n/g, "<br/>"))}</p>`;
+    })
+    .join("");
+}
+
+function findLatestSavedResponse(rows: Array<Record<string, unknown>>, questionId: string, model: string): string {
+  const matches = rows.filter(
+    (row) => String(row.question_id ?? "").trim() === questionId && String(row.model ?? "").trim() === model
+  );
+  if (!matches.length) {
+    return "";
+  }
+
+  let latestWithTimestamp: Record<string, unknown> | null = null;
+  let latestTimestamp = Number.NEGATIVE_INFINITY;
+  for (const row of matches) {
+    const rawTimestamp = String(row.timestamp ?? "").trim();
+    const parsedTimestamp = Date.parse(rawTimestamp);
+    if (Number.isFinite(parsedTimestamp) && parsedTimestamp > latestTimestamp) {
+      latestTimestamp = parsedTimestamp;
+      latestWithTimestamp = row;
+    }
+  }
+
+  const chosen = latestWithTimestamp ?? matches[matches.length - 1];
+  return String(chosen.response ?? "");
+}
 
 export default function RunPage() {
   const { sessionId, config, setConfig, addRunHistory, updateRunHistory } = useAppState();
@@ -21,6 +88,9 @@ export default function RunPage() {
   const [runId, setRunId] = useState<number | null>(null);
   const [runStatus, setRunStatus] = useState<RunStatusResponse | null>(null);
   const [responses, setResponses] = useState<Record<string, string>>({});
+  const [questionLayout, setQuestionLayout] = useState<"vertical" | "horizontal">("vertical");
+  const [responseLayout, setResponseLayout] = useState<"vertical" | "horizontal">("vertical");
+  const [responseFormat, setResponseFormat] = useState<"plain" | "markdown">("plain");
   const [inlineBanner, setInlineBanner] = useState<{ tone: "info" | "warning" | "danger" | "success"; title: string; message: string } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -41,6 +111,7 @@ export default function RunPage() {
         error: runStatus.error
       })
     : "idle";
+  const selectedModelsKey = useMemo(() => selectedModels.join("|"), [selectedModels]);
 
   useEffect(() => {
     let active = true;
@@ -112,6 +183,41 @@ export default function RunPage() {
       eventSourceRef.current?.close();
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadPreviousResponses = async () => {
+      if (!activeQuestion || !selectedModels.length) {
+        setResponses({});
+        return;
+      }
+      if (runState === "running") {
+        return;
+      }
+
+      try {
+        const payload = await getResults(config.datasetKey);
+        if (!active) {
+          return;
+        }
+        const mapped: Record<string, string> = {};
+        for (const model of selectedModels) {
+          mapped[model] = findLatestSavedResponse(payload.results, activeQuestion.id, model);
+        }
+        setResponses(mapped);
+      } catch {
+        if (active) {
+          setResponses({});
+        }
+      }
+    };
+
+    void loadPreviousResponses();
+    return () => {
+      active = false;
+    };
+  }, [config.datasetKey, activeQuestion?.id, selectedModelsKey, runState]);
 
   const openRunStream = (nextRunId: number) => {
     eventSourceRef.current?.close();
@@ -271,66 +377,182 @@ export default function RunPage() {
         <p className="mt-1 text-sm text-muted">Live run controls with stop and manual decision support.</p>
       </header>
 
-      {configError ? <StatusBanner tone="warning" title="Configuration issue:" message={configError} /> : null}
+      {configError ? (
+        <div className="rounded-ui border border-warning/30 bg-warning/10 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/configure"
+              className="focus-ring rounded-ui border border-warning/40 bg-white px-3 py-1.5 text-sm font-medium text-warning hover:bg-warning/5"
+            >
+              Configure
+            </Link>
+            <p className="text-sm text-warning">
+              <span className="font-semibold">Configuration issue:</span> {configError}
+            </p>
+          </div>
+        </div>
+      ) : null}
       {inlineBanner ? <StatusBanner tone={inlineBanner.tone} title={inlineBanner.title} message={inlineBanner.message} /> : null}
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <Card title="Question Navigator">
-          <div className="grid gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                className="focus-ring rounded-ui border border-border px-3 py-2 text-sm"
-                onClick={() => setConfig({ questionId: questions[Math.max(0, questionIndex - 1)].id })}
-                disabled={questionIndex <= 0}
-              >
-                Previous
-              </button>
-              <span className="text-sm text-muted">
-                {questionIndex + 1} / {questions.length}
-              </span>
-              <button
-                className="focus-ring rounded-ui border border-border px-3 py-2 text-sm"
-                onClick={() => setConfig({ questionId: questions[Math.min(questions.length - 1, questionIndex + 1)].id })}
-                disabled={questionIndex >= questions.length - 1}
-              >
-                Next
-              </button>
+        <div className="lg:col-span-2">
+          <div className="overflow-x-auto rounded-card border border-border bg-surface p-3 shadow-soft md:p-4">
+            <div className="inline-flex min-w-full flex-nowrap items-center gap-2 whitespace-nowrap">
+              <div className="inline-flex items-center gap-2 rounded-ui border border-border bg-white px-3 py-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Dataset</span>
+                <span className="text-sm font-medium">{config.datasetKey || "-"}</span>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-ui border border-border bg-white px-3 py-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">Models</span>
+                <span className="text-sm font-medium">{selectedModels.join(", ") || "-"}</span>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-ui border border-border bg-white px-3 py-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">State</span>
+                <span className="text-sm font-medium">{runState}</span>
+              </div>
             </div>
-            <article className="rounded-ui border border-border bg-slate-50 p-3">
-              <p className="text-sm font-semibold">{activeQuestion?.id}</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm">{activeQuestion?.prompt}</p>
-              <p className="mt-2 text-xs text-muted">Expected: {activeQuestion?.expected_answer || "-"}</p>
-            </article>
           </div>
-        </Card>
+        </div>
 
-        <Card title="Run Controls">
-          <div className="grid gap-3">
-            <p className="text-sm text-muted">Dataset: {config.datasetKey}</p>
-            <p className="text-sm text-muted">Models: {selectedModels.join(", ") || "-"}</p>
-            <p className="text-sm text-muted">State: {runState}</p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="focus-ring rounded-ui bg-primary px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={handleStart}
-                disabled={!canStart || runState === "running"}
+        <div className="lg:col-span-2">
+          <Card
+            title="Question Navigator"
+            actions={
+              <div className="inline-flex rounded-ui border border-border bg-white p-1 text-xs font-medium">
+                <button
+                  type="button"
+                  className={`focus-ring rounded-ui px-2 py-1 ${questionLayout === "vertical" ? "bg-primary text-white" : "text-muted hover:bg-slate-50"}`}
+                  onClick={() => setQuestionLayout("vertical")}
+                  aria-pressed={questionLayout === "vertical"}
+                  data-testid="run-question-layout-vertical"
+                >
+                  Vertical
+                </button>
+                <button
+                  type="button"
+                  className={`focus-ring rounded-ui px-2 py-1 ${questionLayout === "horizontal" ? "bg-primary text-white" : "text-muted hover:bg-slate-50"}`}
+                  onClick={() => setQuestionLayout("horizontal")}
+                  aria-pressed={questionLayout === "horizontal"}
+                  data-testid="run-question-layout-horizontal"
+                >
+                  Horizontal
+                </button>
+              </div>
+            }
+          >
+            <div className="grid gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  className="focus-ring rounded-ui border border-border px-3 py-2 text-sm"
+                  onClick={() => setConfig({ questionId: questions[Math.max(0, questionIndex - 1)].id })}
+                  disabled={questionIndex <= 0}
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-muted">
+                  {questionIndex + 1} / {questions.length}
+                </span>
+                <button
+                  className="focus-ring rounded-ui border border-border px-3 py-2 text-sm"
+                  onClick={() => setConfig({ questionId: questions[Math.min(questions.length - 1, questionIndex + 1)].id })}
+                  disabled={questionIndex >= questions.length - 1}
+                >
+                  Next
+                </button>
+              </div>
+              <p className="mb-1 text-sm font-semibold">{activeQuestion?.id}</p>
+              <div
+                className={questionLayout === "horizontal" ? "grid items-start gap-3 md:grid-cols-2" : "grid gap-3"}
+                data-testid="run-question-layout"
               >
-                Start Run
-              </button>
-              <button
-                className="focus-ring rounded-ui border border-border bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={handleStop}
-                disabled={!runId || runState !== "running"}
-              >
-                Stop
-              </button>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Question</label>
+                  <textarea
+                    readOnly
+                    value={activeQuestion?.prompt ?? ""}
+                    className="font-log focus-ring min-h-40 w-full rounded-ui border border-border bg-slate-50 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Expected Answer</label>
+                  <textarea
+                    readOnly
+                    value={activeQuestion?.expected_answer ?? "-"}
+                    className={`font-log focus-ring w-full rounded-ui border border-border bg-slate-50 px-3 py-2 text-sm ${
+                      questionLayout === "horizontal" ? "min-h-40" : "min-h-24"
+                    }`}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  className="focus-ring rounded-ui bg-primary px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={handleStart}
+                  disabled={!canStart || runState === "running"}
+                >
+                  Start Run
+                </button>
+                <button
+                  className="focus-ring rounded-ui border border-border bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={handleStop}
+                  disabled={!runId || runState !== "running"}
+                >
+                  Stop
+                </button>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       </section>
 
-      <Card title="Live Model Responses">
-        <div className="grid gap-3">
+      <Card
+        title="Model Responses"
+        actions={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="inline-flex rounded-ui border border-border bg-white p-1 text-xs font-medium">
+              <button
+                type="button"
+                className={`focus-ring rounded-ui px-2 py-1 ${responseFormat === "plain" ? "bg-primary text-white" : "text-muted hover:bg-slate-50"}`}
+                onClick={() => setResponseFormat("plain")}
+                aria-pressed={responseFormat === "plain"}
+                data-testid="run-response-format-plain"
+              >
+                Plain Text
+              </button>
+              <button
+                type="button"
+                className={`focus-ring rounded-ui px-2 py-1 ${responseFormat === "markdown" ? "bg-primary text-white" : "text-muted hover:bg-slate-50"}`}
+                onClick={() => setResponseFormat("markdown")}
+                aria-pressed={responseFormat === "markdown"}
+                data-testid="run-response-format-markdown"
+              >
+                MD Format
+              </button>
+            </div>
+            <div className="inline-flex rounded-ui border border-border bg-white p-1 text-xs font-medium">
+              <button
+                type="button"
+                className={`focus-ring rounded-ui px-2 py-1 ${responseLayout === "vertical" ? "bg-primary text-white" : "text-muted hover:bg-slate-50"}`}
+                onClick={() => setResponseLayout("vertical")}
+                aria-pressed={responseLayout === "vertical"}
+                data-testid="run-layout-vertical"
+              >
+                Vertical
+              </button>
+              <button
+                type="button"
+                className={`focus-ring rounded-ui px-2 py-1 ${responseLayout === "horizontal" ? "bg-primary text-white" : "text-muted hover:bg-slate-50"}`}
+                onClick={() => setResponseLayout("horizontal")}
+                aria-pressed={responseLayout === "horizontal"}
+                data-testid="run-layout-horizontal"
+              >
+                Horizontal
+              </button>
+            </div>
+          </div>
+        }
+      >
+        <div className={responseLayout === "horizontal" ? "grid gap-3 md:grid-cols-2" : "grid gap-3"} data-testid="run-responses-layout">
           {selectedModels.map((model) => (
             <article key={model} className="rounded-ui border border-border bg-white p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -339,11 +561,18 @@ export default function RunPage() {
                   {runStatus?.entries.find((entry) => entry.model === model)?.event ?? "idle"}
                 </span>
               </div>
-              <textarea
-                readOnly
-                value={responses[model] ?? ""}
-                className="font-log focus-ring min-h-32 w-full rounded-ui border border-border bg-slate-50 px-3 py-2 text-xs"
-              />
+              {responseFormat === "plain" ? (
+                <textarea
+                  readOnly
+                  value={responses[model] ?? ""}
+                  className="font-log focus-ring min-h-32 w-full rounded-ui border border-border bg-slate-50 px-3 py-2 text-xs"
+                />
+              ) : (
+                <div
+                  className="min-h-32 rounded-ui border border-border bg-slate-50 px-3 py-2 text-xs leading-6"
+                  dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(responses[model] ?? "") }}
+                />
+              )}
               <div className="mt-2 flex flex-wrap gap-2">
                 <button className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs" onClick={() => void handleManual(model, "success")}>
                   Mark Successful

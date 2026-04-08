@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [healthLabel, setHealthLabel] = useState("checking");
   const [sloLabel, setSloLabel] = useState("checking");
   const [banner, setBanner] = useState<{ tone: "info" | "warning" | "danger" | "success"; title: string; message: string } | null>(null);
@@ -76,11 +77,28 @@ export function AppShell({ children }: { children: ReactNode }) {
         <aside
           className={`fixed inset-y-0 left-0 z-30 w-64 border-r border-border bg-primary px-4 py-4 text-white transition-transform lg:static lg:translate-x-0 ${
             menuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-          }`}
+          } ${desktopSidebarOpen ? "lg:block" : "lg:hidden"}`}
         >
-          <div className="mb-6">
-            <h1 className="text-xl font-semibold">Open LLM Benchmark</h1>
-            <p className="mt-1 text-xs text-slate-200">Enterprise Operator UI</p>
+          <div className="mb-6 flex items-start justify-between gap-2">
+            <div>
+              <h1 className="text-xl font-semibold text-white">Open LLM Benchmark</h1>
+              <p className="mt-1 text-xs text-slate-200">Enterprise Operator UI</p>
+            </div>
+            <button
+              className="focus-ring rounded-ui border border-white/30 px-2 py-1 text-xs font-medium text-white hover:bg-white/10 lg:hidden"
+              onClick={() => setMenuOpen(false)}
+              aria-label="Close sidebar menu"
+            >
+              Close
+            </button>
+            <button
+              className="focus-ring hidden rounded-ui border border-white/30 px-2 py-1 text-xs font-medium text-white hover:bg-white/10 lg:inline-flex"
+              onClick={() => setDesktopSidebarOpen(false)}
+              aria-label="Collapse sidebar"
+              data-testid="sidebar-collapse"
+            >
+              Hide
+            </button>
           </div>
           <nav className="grid gap-1">
             {NAV_ITEMS.map((item) => {
@@ -110,9 +128,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                 >
                   Menu
                 </button>
+                <button
+                  className="focus-ring hidden rounded-ui border border-border px-3 py-2 text-sm font-medium lg:inline-flex"
+                  onClick={() => setDesktopSidebarOpen((prev) => !prev)}
+                  aria-pressed={!desktopSidebarOpen}
+                  data-testid="sidebar-toggle"
+                >
+                  {desktopSidebarOpen ? "Hide Sidebar" : "Show Sidebar"}
+                </button>
                 <div>
                   <p className="text-xs uppercase tracking-wide text-muted">System Status</p>
-                  <p className="text-sm font-medium">Health: {healthLabel} · SLO: {sloLabel}</p>
+                  <p className="text-sm font-medium">Health: {healthLabel} | SLO: {sloLabel}</p>
                 </div>
               </div>
               <div className="text-right text-xs text-muted">

@@ -1,7 +1,37 @@
-import { expect, test } from "@playwright/test";
+﻿import { expect, test } from "@playwright/test";
 
 async function mockBaseApi(page: import("@playwright/test").Page) {
   const API_HOST = /http:\/\/(localhost|127\.0\.0\.1):8000/;
+  let resultsPayload = {
+    dataset_key: "default_tr",
+    results: [
+      {
+        question_id: "q001",
+        model: "gemma3:4b",
+        status: "success",
+        reason: "ok",
+        response: "Merhaba"
+      }
+    ],
+    metrics: [
+      {
+        model: "gemma3:4b",
+        accuracy_percent: 100,
+        latency_score: 95,
+        success_count: 2,
+        scored_count: 2,
+        median_ms: 1300
+      }
+    ],
+    matrix: [
+      {
+        question_id: "q001",
+        category: "GENEL",
+        cells: { "gemma3:4b": "OK 1.30s" }
+      }
+    ]
+  };
+
   await page.route(new RegExp(`${API_HOST.source}/health$`), async (route) => {
     await route.fulfill({ json: { status: "ok", version: "v1" } });
   });
@@ -71,35 +101,36 @@ async function mockBaseApi(page: import("@playwright/test").Page) {
     });
   });
   await page.route(new RegExp(`${API_HOST.source}/results\\?.+`), async (route) => {
+    await route.fulfill({ json: resultsPayload });
+  });
+  await page.route(new RegExp(`${API_HOST.source}/results/model\\?.+`), async (route) => {
+    if (route.request().method() !== "DELETE") {
+      await route.fallback();
+      return;
+    }
+    const url = new URL(route.request().url());
+    const model = url.searchParams.get("model");
+    const datasetKey = url.searchParams.get("dataset_key") ?? "default_tr";
+    if (model !== "gemma3:4b") {
+      await route.fulfill({ status: 404, json: { detail: "Model results not found for dataset" } });
+      return;
+    }
+    resultsPayload = {
+      dataset_key: datasetKey,
+      results: [],
+      metrics: [],
+      matrix: []
+    };
     await route.fulfill({
+      status: 200,
       json: {
-        dataset_key: "default_tr",
-        results: [
-          {
-            question_id: "q001",
-            model: "gemma3:4b",
-            status: "success",
-            reason: "ok",
-            response: "Merhaba"
-          }
-        ],
-        metrics: [
-          {
-            model: "gemma3:4b",
-            accuracy_percent: 100,
-            latency_score: 95,
-            success_count: 2,
-            scored_count: 2,
-            median_ms: 1300
-          }
-        ],
-        matrix: [
-          {
-            question_id: "q001",
-            category: "GENEL",
-            cells: { "gemma3:4b": "✅" }
-          }
-        ]
+        status: "deleted",
+        summary: {
+          dataset_key: datasetKey,
+          model,
+          deleted_count: 1,
+          remaining_count: 0
+        }
       }
     });
   });
@@ -198,6 +229,12 @@ test("responsive smoke on desktop and mobile", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/run");
   await expect(page.getByRole("heading", { name: "Benchmark Run", exact: true })).toBeVisible();
+  await expect(page.getByTestId("run-question-layout-vertical")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("run-question-layout-horizontal").click();
+  await expect(page.getByTestId("run-question-layout-horizontal")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("run-layout-vertical")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("run-layout-horizontal").click();
+  await expect(page.getByTestId("run-layout-horizontal")).toHaveAttribute("aria-pressed", "true");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/datasets");
@@ -230,4 +267,21 @@ test("state handling: toast + banner shown on run start failure", async ({ page 
   await page.getByRole("button", { name: "Start Run" }).click();
   await expect(page.getByText("Run unavailable:")).toBeVisible();
   await expect(page.getByText("Runs are temporarily disabled due to SSE SLO breach.").first()).toBeVisible();
+});
+
+test("results page allows model history deletion and refreshes data", async ({ page }) => {
+  await mockBaseApi(page);
+  page.on("dialog", async (dialog) => {
+    await dialog.accept();
+  });
+
+  await page.goto("/results");
+  await expect(page.getByTestId("results-delete-model-select")).toBeVisible();
+  await expect(page.getByTestId("results-delete-model-button")).toBeEnabled();
+
+  await page.getByTestId("results-delete-model-button").click();
+
+  await expect(page.getByText("Deleted 1 records for gemma3:4b.")).toBeVisible();
+  await expect(page.getByText("No detailed responses available yet.")).toBeVisible();
+  await expect(page.getByTestId("results-delete-model-button")).toBeDisabled();
 });
