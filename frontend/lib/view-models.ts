@@ -24,8 +24,8 @@ export type UiDistributionRow = {
 };
 
 export function resolveActiveModels(config: BenchmarkConfig): string[] {
-  const model1 = (config.manualModel1 || config.model1 || "").trim();
-  const model2 = (config.manualModel2 || config.model2 || "").trim();
+  const model1 = (config.model1 || "").trim();
+  const model2 = (config.model2 || "").trim();
   if (config.mode === "single") {
     return model1 ? [model1] : [];
   }
@@ -35,7 +35,7 @@ export function resolveActiveModels(config: BenchmarkConfig): string[] {
 export function hasModelSelectionError(config: BenchmarkConfig): string | null {
   const selected = resolveActiveModels(config);
   if (config.mode === "single" && selected.length < 1) {
-    return "Select one model or enter it manually.";
+    return "Select one model.";
   }
   if (config.mode === "pair" && selected.length < 2) {
     return "Comparison mode requires two different models.";

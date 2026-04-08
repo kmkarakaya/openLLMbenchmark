@@ -200,18 +200,14 @@ export default function ConfigurePage() {
             label="Primary Model"
             options={models}
             selected={config.model1}
-            manual={config.manualModel1}
             onSelectedChange={(value) => setConfig({ model1: value })}
-            onManualChange={(value) => setConfig({ manualModel1: value })}
           />
 
           <ModelPicker
             label="Secondary Model"
-            options={models.filter((item) => item !== (config.manualModel1 || config.model1))}
+            options={models.filter((item) => item !== config.model1)}
             selected={config.model2}
-            manual={config.manualModel2}
             onSelectedChange={(value) => setConfig({ model2: value })}
-            onManualChange={(value) => setConfig({ manualModel2: value })}
             disabled={config.mode !== "pair"}
           />
 

@@ -24,7 +24,12 @@ export default function ResultsPage() {
   const [results, setResults] = useState<ResultsResponse | null>(null);
   const [questions, setQuestions] = useState<BenchmarkQuestion[]>([]);
   const [readsDisabled, setReadsDisabled] = useState(false);
-  const [lastExport, setLastExport] = useState<{ format: "json" | "xlsx"; at: string } | null>(null);
+  const [lastExport, setLastExport] = useState<{
+    format: "json" | "xlsx";
+    at: string;
+    datasetKey: string;
+    status: "requested";
+  } | null>(null);
 
   const metrics = useMemo(() => mapMetrics(results), [results]);
   const matrixRows = useMemo(() => mapMatrix(results), [results]);
@@ -106,8 +111,8 @@ export default function ResultsPage() {
 
   const onExportClick = (format: "json" | "xlsx") => {
     const at = new Date().toISOString();
-    setLastExport({ format, at });
-    pushToast("info", `Export started: ${format.toUpperCase()} for ${config.datasetKey}`);
+    setLastExport({ format, at, datasetKey: config.datasetKey, status: "requested" });
+    pushToast("info", `Export requested: ${format.toUpperCase()} for ${config.datasetKey}`);
   };
 
   if (loading) {
@@ -202,11 +207,21 @@ export default function ResultsPage() {
                 Export Excel
               </a>
             </div>
-            <p className="mt-2 text-xs text-muted">
-              {lastExport
-                ? `Last export: ${lastExport.format.toUpperCase()} at ${new Date(lastExport.at).toLocaleString()}`
-                : "Last export: not started in this session."}
-            </p>
+            <div className="mt-2 rounded-ui border border-border bg-white p-2 text-xs">
+              {lastExport ? (
+                <div className="flex flex-wrap items-center gap-2 text-muted">
+                  <span className="inline-flex rounded-full border border-accent/40 bg-sky-50 px-2 py-0.5 font-semibold text-sky-800">
+                    {lastExport.status.toUpperCase()}
+                  </span>
+                  <span>
+                    Last export requested: {lastExport.format.toUpperCase()} | Dataset: {lastExport.datasetKey}
+                  </span>
+                  <span className="font-log">{new Date(lastExport.at).toLocaleString()}</span>
+                </div>
+              ) : (
+                <span className="text-muted">No export request yet in this session.</span>
+              )}
+            </div>
           </div>
         </div>
       </Card>

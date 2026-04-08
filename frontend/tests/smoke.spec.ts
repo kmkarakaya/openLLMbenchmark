@@ -218,7 +218,6 @@ test("state handling: toast + banner shown on run start failure", async ({ page 
   await mockBaseApi(page);
   await page.goto("/configure");
   await expect(page.getByText("Resolved model set")).toBeVisible();
-  await page.getByRole("textbox", { name: "Primary Model (Manual)" }).fill("gemma3:4b");
 
   await page.route(/http:\/\/(localhost|127\.0\.0\.1):8000\/runs$/, async (route) => {
     if (route.request().method() !== "POST") {

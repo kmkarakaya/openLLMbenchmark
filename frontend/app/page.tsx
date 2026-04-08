@@ -27,16 +27,16 @@ export default function HomePage() {
         <Card title="Quick Actions">
           <div className="grid gap-2 sm:grid-cols-2">
             <Link className="focus-ring rounded-ui border border-border bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50" href="/configure">
-              Configure Benchmark
+              Configure
             </Link>
             <Link className="focus-ring rounded-ui border border-border bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50" href="/run">
-              Start / Monitor Run
+              Benchmark Run
             </Link>
             <Link className="focus-ring rounded-ui border border-border bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50" href="/results">
-              View Results
+              Results
             </Link>
             <Link className="focus-ring rounded-ui border border-border bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50" href="/datasets">
-              Manage Datasets
+              Dataset Management
             </Link>
           </div>
         </Card>
@@ -53,11 +53,11 @@ export default function HomePage() {
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted">Model 1</dt>
-              <dd className="font-medium">{(config.manualModel1 || config.model1 || "-").trim() || "-"}</dd>
+              <dd className="font-medium">{(config.model1 || "-").trim() || "-"}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted">Model 2</dt>
-              <dd className="font-medium">{(config.manualModel2 || config.model2 || "-").trim() || "-"}</dd>
+              <dd className="font-medium">{(config.model2 || "-").trim() || "-"}</dd>
             </div>
           </dl>
         </Card>

@@ -126,6 +126,24 @@ Use `devops_helper.bat` from the repo root:
 - `hf`: creates a clean temp snapshot and deploys to Hugging Face Space
 - `all`: runs `github` then `hf`
 
+## Run API + UI Together (Windows)
+
+From repo root:
+
+```bat
+.\run_local_stack.bat
+```
+
+Custom ports:
+
+```bat
+.\run_local_stack.bat 8001 3001
+```
+
+- Starts API in a new terminal window (`python -m uvicorn api:app ...`).
+- Starts frontend in a new terminal window (`npm run dev` in `frontend/`).
+- Sets `NEXT_PUBLIC_API_BASE_URL` automatically to the API URL.
+
 ## Deploy on Hugging Face Spaces (Docker)
 
 This repository is ready to run as a Docker Space with the included `Dockerfile`.

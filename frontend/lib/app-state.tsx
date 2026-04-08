@@ -10,8 +10,6 @@ export type BenchmarkConfig = {
   mode: BenchmarkMode;
   model1: string;
   model2: string;
-  manualModel1: string;
-  manualModel2: string;
   systemPrompt: string;
   questionId: string;
 };
@@ -38,8 +36,6 @@ const DEFAULT_CONFIG: BenchmarkConfig = {
   mode: "single",
   model1: "",
   model2: "",
-  manualModel1: "",
-  manualModel2: "",
   systemPrompt: "",
   questionId: ""
 };
