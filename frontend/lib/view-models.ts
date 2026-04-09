@@ -9,6 +9,7 @@ export type UiMetricRow = {
   medianSeconds: number | null;
   meanSeconds: number | null;
   p95Seconds: number | null;
+  averageGeneratedTokens: number | null;
 };
 
 export type UiMatrixRow = {
@@ -53,19 +54,43 @@ export function mapMetrics(results: ResultsResponse | null): UiMetricRow[] {
   if (!results) {
     return [];
   }
+  const fallbackAverageTokensByModel = new Map<string, number>();
+  const tokenRowsByModel = new Map<string, number[]>();
+  for (const row of results.results) {
+    const record = row as Record<string, unknown>;
+    const model = String(record.model ?? "").trim();
+    const rawTokens = record.generated_tokens;
+    if (!model || typeof rawTokens !== "number" || !Number.isFinite(rawTokens) || record.interrupted === true) {
+      continue;
+    }
+    const bucket = tokenRowsByModel.get(model) ?? [];
+    bucket.push(Number(rawTokens));
+    tokenRowsByModel.set(model, bucket);
+  }
+  for (const [model, tokenValues] of tokenRowsByModel.entries()) {
+    const average = tokenValues.reduce((sum, value) => sum + value, 0) / tokenValues.length;
+    fallbackAverageTokensByModel.set(model, average);
+  }
+
   return results.metrics.map((row) => {
     const record = row as Record<string, unknown>;
+    const model = String(record.model ?? "");
     const medianMs = Number(record.median_ms ?? 0);
     const meanMs = Number(record.mean_ms ?? 0);
     const p95Ms = Number(record.p95_ms ?? 0);
+    const apiAverageTokens = record.avg_generated_tokens;
     return {
-      model: String(record.model ?? ""),
+      model,
       accuracyPercent: Number(record.accuracy_percent ?? 0),
       latencyScore: Number(record.latency_score ?? 0),
       successOverScored: `${Number(record.success_count ?? 0)}/${Number(record.scored_count ?? 0)}`,
       medianSeconds: medianMs > 0 ? Number((medianMs / 1000).toFixed(2)) : null,
       meanSeconds: meanMs > 0 ? Number((meanMs / 1000).toFixed(2)) : null,
-      p95Seconds: p95Ms > 0 ? Number((p95Ms / 1000).toFixed(2)) : null
+      p95Seconds: p95Ms > 0 ? Number((p95Ms / 1000).toFixed(2)) : null,
+      averageGeneratedTokens:
+        typeof apiAverageTokens === "number" && Number.isFinite(apiAverageTokens)
+          ? Number(apiAverageTokens)
+          : (fallbackAverageTokensByModel.get(model) ?? null)
     };
   });
 }

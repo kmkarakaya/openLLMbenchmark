@@ -1,5 +1,6 @@
 import time
 
+from engine import ChatStreamEvent
 from model_identity import to_model_ref
 from runner import LiveRunner
 
@@ -22,13 +23,14 @@ def test_runner_collects_two_model_responses(monkeypatch) -> None:
         "qwen3:8b": ["Dün", "ya"],
     }
 
-    def fake_stream_chat(*, client, model, prompt, system_prompt):  # type: ignore[no-untyped-def]
+    def fake_stream_chat_events(*, client, model, prompt, system_prompt):  # type: ignore[no-untyped-def]
         del client, prompt, system_prompt
         for part in response_parts[model]:
             time.sleep(0.01)
-            yield part
+            yield ChatStreamEvent(content=part)
+        yield ChatStreamEvent(done=True, generated_tokens=len("".join(response_parts[model])), prompt_tokens=4)
 
-    monkeypatch.setattr("runner.stream_chat", fake_stream_chat)
+    monkeypatch.setattr("runner.stream_chat_events", fake_stream_chat_events)
 
     live_runner = LiveRunner()
     started = live_runner.start(
@@ -61,19 +63,21 @@ def test_runner_collects_two_model_responses(monkeypatch) -> None:
     assert entries[model_1_ref]["dataset_key"] == "default_tr"
     assert entries[model_1_ref]["question_id"] == "q001"
     assert entries[model_1_ref]["source"] == "cloud"
+    assert entries[model_1_ref]["generated_tokens"] == len("Merhaba")
+    assert entries[model_1_ref]["prompt_tokens"] == 4
     assert entries[model_1_ref]["event"] in {"entry_completed", "run_error", "run_interrupted"}
 
 
 def test_runner_stop_interrupts_all_models(monkeypatch) -> None:
     monkeypatch.setattr("runner.get_client_for_source", lambda source, host=None: object())
 
-    def slow_stream_chat(*, client, model, prompt, system_prompt):  # type: ignore[no-untyped-def]
+    def slow_stream_chat_events(*, client, model, prompt, system_prompt):  # type: ignore[no-untyped-def]
         del client, model, prompt, system_prompt
         for _ in range(20):
             time.sleep(0.01)
-            yield "x"
+            yield ChatStreamEvent(content="x")
 
-    monkeypatch.setattr("runner.stream_chat", slow_stream_chat)
+    monkeypatch.setattr("runner.stream_chat_events", slow_stream_chat_events)
 
     live_runner = LiveRunner()
     started = live_runner.start(
@@ -104,11 +108,12 @@ def test_runner_stop_interrupts_all_models(monkeypatch) -> None:
 def test_runner_distinguishes_same_model_across_sources(monkeypatch) -> None:
     monkeypatch.setattr("runner.get_client_for_source", lambda source, host=None: object())
 
-    def fake_stream_chat(*, client, model, prompt, system_prompt):  # type: ignore[no-untyped-def]
+    def fake_stream_chat_events(*, client, model, prompt, system_prompt):  # type: ignore[no-untyped-def]
         del client, prompt, system_prompt
-        yield f"{model}-ok"
+        yield ChatStreamEvent(content=f"{model}-ok")
+        yield ChatStreamEvent(done=True, generated_tokens=1, prompt_tokens=2)
 
-    monkeypatch.setattr("runner.stream_chat", fake_stream_chat)
+    monkeypatch.setattr("runner.stream_chat_events", fake_stream_chat_events)
 
     live_runner = LiveRunner()
     started = live_runner.start(
@@ -128,3 +133,4 @@ def test_runner_distinguishes_same_model_across_sources(monkeypatch) -> None:
     assert "gemma3:4b:local" in entries
     assert entries["gemma3:4b:cloud"]["source"] == "cloud"
     assert entries["gemma3:4b:local"]["source"] == "local"
+    assert entries["gemma3:4b:cloud"]["generated_tokens"] == 1

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from engine import get_cloud_client, get_local_client, list_models, stream_chat
+from engine import ChatStreamEvent, get_cloud_client, get_local_client, list_models, stream_chat, stream_chat_events
 
 
 class _Message:
@@ -11,9 +11,20 @@ class _Message:
 
 
 class _Chunk:
-    def __init__(self, content: str = "", response: str = "") -> None:
+    def __init__(
+        self,
+        content: str = "",
+        response: str = "",
+        *,
+        done: bool = False,
+        eval_count: int | None = None,
+        prompt_eval_count: int | None = None,
+    ) -> None:
         self.message = _Message(content) if content else None
         self.response = response
+        self.done = done
+        self.eval_count = eval_count
+        self.prompt_eval_count = prompt_eval_count
 
 
 class _ModelItem:
@@ -33,6 +44,7 @@ class _ClientForStream:
                 _Chunk(content="Merhaba "),
                 _Chunk(content="dünya"),
                 {"message": {"content": "!"}},
+                {"done": True, "eval_count": 3, "prompt_eval_count": 5},
             ]
         )
 
@@ -51,6 +63,14 @@ def test_stream_chat_handles_object_and_dict_chunks() -> None:
     client = _ClientForStream()
     parts = list(stream_chat(client=client, model="x", prompt="p", system_prompt="s"))  # type: ignore[arg-type]
     assert "".join(parts) == "Merhaba dünya!"
+
+
+def test_stream_chat_events_preserve_final_usage_metadata() -> None:
+    client = _ClientForStream()
+    events = list(stream_chat_events(client=client, model="x", prompt="p", system_prompt="s"))  # type: ignore[arg-type]
+
+    assert events[-1] == ChatStreamEvent(content="", done=True, generated_tokens=3, prompt_tokens=5)
+    assert "".join(event.content for event in events) == "Merhaba dünya!"
 
 
 def test_list_models_handles_object_payload() -> None:

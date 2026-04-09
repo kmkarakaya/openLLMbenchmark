@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from storage import load_results, render_results_markdown, save_results
+from storage import compute_model_metrics, format_cell, load_results, render_results_markdown, save_results
 
 
 def test_markdown_generation(tmp_path: Path) -> None:
@@ -66,3 +66,59 @@ def test_save_results_creates_file_lock_sidecar(tmp_path: Path) -> None:
     path = tmp_path / "results.json"
     save_results(path, [{"question_id": "q001", "model": "x"}])
     assert (tmp_path / "results.json.lock").exists()
+
+
+def test_compute_model_metrics_includes_average_generated_tokens() -> None:
+    rows = [
+        {
+            "question_id": "q001",
+            "model": "gemma3:4b:cloud",
+            "status": "success",
+            "response_time_ms": 1000.0,
+            "generated_tokens": 10,
+            "interrupted": False,
+        },
+        {
+            "question_id": "q002",
+            "model": "gemma3:4b:cloud",
+            "status": "fail",
+            "response_time_ms": 2000.0,
+            "generated_tokens": 20,
+            "interrupted": False,
+        },
+        {
+            "question_id": "q003",
+            "model": "gemma3:4b:cloud",
+            "status": "manual_review",
+            "response_time_ms": 3000.0,
+            "generated_tokens": 999,
+            "interrupted": True,
+        },
+    ]
+
+    metrics = compute_model_metrics(rows)
+
+    assert len(metrics) == 1
+    assert metrics[0]["avg_generated_tokens"] == 15
+
+
+def test_format_cell_includes_duration_and_generated_tokens() -> None:
+    record = {
+        "status": "success",
+        "response_time_ms": 1400.0,
+        "generated_tokens": 27,
+        "generated_tokens_estimated": False,
+    }
+
+    assert format_cell(record) == "✅ 1.40s | 27 tok"
+
+
+def test_format_cell_marks_estimated_generated_tokens() -> None:
+    record = {
+        "status": "manual_review",
+        "response_time_ms": 910.0,
+        "generated_tokens": 13,
+        "generated_tokens_estimated": True,
+    }
+
+    assert format_cell(record) == "🟡 0.91s | 13 tok (est.)"

@@ -111,6 +111,21 @@ type SavedResultMeta = {
   eventLabel: string;
 };
 
+function readGeneratedTokensMeta(savedResult: Record<string, unknown>, responseText: string): Pick<SavedResultMeta, "generatedTokens" | "generatedTokensEstimated"> {
+  const rawGeneratedTokens = savedResult.generated_tokens;
+  const explicitEstimated = savedResult.generated_tokens_estimated;
+  if (typeof rawGeneratedTokens === "number" && Number.isFinite(rawGeneratedTokens)) {
+    return {
+      generatedTokens: Number(rawGeneratedTokens),
+      generatedTokensEstimated: typeof explicitEstimated === "boolean" ? explicitEstimated : true
+    };
+  }
+  return {
+    generatedTokens: estimateTokenCount(responseText),
+    generatedTokensEstimated: true
+  };
+}
+
 export default function RunPage() {
   const { sessionId, config, setConfig, addRunHistory, updateRunHistory } = useAppState();
   const { pushToast } = useToast();
@@ -258,18 +273,14 @@ export default function RunPage() {
           mapped[model] = savedResult ? String(savedResult.response ?? "") : "";
           if (savedResult) {
             const responseText = String(savedResult.response ?? "");
-            const rawGeneratedTokens = savedResult.generated_tokens;
-            const generatedTokens =
-              typeof rawGeneratedTokens === "number" && Number.isFinite(rawGeneratedTokens)
-                ? Number(rawGeneratedTokens)
-                : estimateTokenCount(responseText);
+            const tokenMeta = readGeneratedTokensMeta(savedResult, responseText);
             savedMetaByModel[model] = {
               responseTimeMs:
                 typeof savedResult.response_time_ms === "number" && Number.isFinite(savedResult.response_time_ms)
                   ? Number(savedResult.response_time_ms)
                   : undefined,
-              generatedTokens,
-              generatedTokensEstimated: !(typeof rawGeneratedTokens === "number" && Number.isFinite(rawGeneratedTokens)),
+              generatedTokens: tokenMeta.generatedTokens,
+              generatedTokensEstimated: tokenMeta.generatedTokensEstimated,
               eventLabel: String(savedResult.status ?? "saved") || "saved"
             };
           }
@@ -688,11 +699,11 @@ export default function RunPage() {
               : statusElapsedMs ?? persistedMeta?.responseTimeMs;
             const durationText = formatElapsedSeconds(durationMs);
             const generatedTokens =
-              typeof (statusEntry as Record<string, unknown> | undefined)?.generated_tokens === "number"
-                ? Number((statusEntry as Record<string, unknown>).generated_tokens)
+              typeof statusEntry?.generated_tokens === "number"
+                ? Number(statusEntry.generated_tokens)
                 : persistedMeta?.generatedTokens ?? estimateTokenCount(responseText);
             const generatedTokensEstimated =
-              typeof (statusEntry as Record<string, unknown> | undefined)?.generated_tokens === "number"
+              typeof statusEntry?.generated_tokens === "number"
                 ? false
                 : persistedMeta?.generatedTokensEstimated ?? true;
             const eventLabel = statusEntry?.event ?? (runInProgress ? "generating" : persistedMeta?.eventLabel ?? "idle");

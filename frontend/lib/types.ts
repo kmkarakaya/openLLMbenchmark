@@ -31,6 +31,8 @@ export type RunEntryStatus = {
   error: string;
   event: string;
   elapsed_ms: number;
+  generated_tokens?: number;
+  prompt_tokens?: number;
 };
 
 export type RunStatusResponse = {

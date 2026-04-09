@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from engine import get_client_for_source, stream_chat
+from engine import get_client_for_source, stream_chat_events
 from model_identity import resolve_model_host, split_model_ref, to_model_ref
 
 
@@ -27,6 +27,8 @@ class ModelRunState:
     event: str = "idle"
     started_at: float = 0.0
     ended_at: float = 0.0
+    generated_tokens: int | None = None
+    prompt_tokens: int | None = None
 
 
 @dataclass
@@ -155,11 +157,12 @@ class LiveRunner:
         chunks: list[str] = []
         try:
             client = get_client_for_source(source=source, host=host)
-            for chunk in stream_chat(client=client, model=model_name, prompt=prompt, system_prompt=system_prompt):
+            for event in stream_chat_events(client=client, model=model_name, prompt=prompt, system_prompt=system_prompt):
                 if self.state.stop_event.is_set():
                     interrupted = True
                     break
-                chunks.append(chunk)
+                if event.content:
+                    chunks.append(event.content)
                 with self.state.lock:
                     if run_id != self.state.run_id:
                         return
@@ -167,7 +170,12 @@ class LiveRunner:
                     if entry is None:
                         return
                     entry.response = "".join(chunks)
-                    entry.event = "chunk"
+                    if event.generated_tokens is not None:
+                        entry.generated_tokens = event.generated_tokens
+                    if event.prompt_tokens is not None:
+                        entry.prompt_tokens = event.prompt_tokens
+                    if event.content:
+                        entry.event = "chunk"
         except Exception as exc:  # noqa: BLE001
             error = str(exc)
 
@@ -221,6 +229,8 @@ class LiveRunner:
                         "event": entry.event,
                         "response": entry.response,
                         "elapsed_ms": elapsed_ms,
+                        "generated_tokens": entry.generated_tokens,
+                        "prompt_tokens": entry.prompt_tokens,
                     }
                 )
             return {

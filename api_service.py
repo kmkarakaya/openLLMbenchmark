@@ -69,6 +69,22 @@ def _normalized_result_row(record: dict[str, Any]) -> dict[str, Any]:
     normalized["model_name"] = model_name
     if not str(normalized.get("model_host", "") or "").strip():
         normalized["model_host"] = resolve_model_host(source)
+
+    prompt_tokens = _optional_int(normalized.get("prompt_tokens"))
+    generated_tokens = _optional_int(normalized.get("generated_tokens"))
+    generated_tokens_estimated = normalized.get("generated_tokens_estimated")
+
+    if generated_tokens is None:
+        generated_tokens = _estimate_generated_tokens(str(normalized.get("response", "") or ""))
+        normalized["generated_tokens_estimated"] = True
+    elif isinstance(generated_tokens_estimated, bool):
+        normalized["generated_tokens_estimated"] = generated_tokens_estimated
+    else:
+        normalized["generated_tokens_estimated"] = prompt_tokens is None
+
+    normalized["generated_tokens"] = generated_tokens
+    if prompt_tokens is not None:
+        normalized["prompt_tokens"] = prompt_tokens
     return normalized
 
 
@@ -126,6 +142,16 @@ def _estimate_generated_tokens(response_text: str) -> int:
     return max(words, round(chars / 4))
 
 
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
 def _persist_completed_run_entries(snapshot: dict[str, Any]) -> None:
     run_id = int(snapshot.get("run_id", 0) or 0)
     if run_id <= 0:
@@ -173,6 +199,8 @@ def _persist_completed_run_entries(snapshot: dict[str, Any]) -> None:
             host = str(entry.get("host", "") or "").strip() or resolve_model_host(source)
             verdict = _verdict_for_entry(entry, expected_answer)
             response_text = str(entry.get("response", "") or "")
+            exact_generated_tokens = _optional_int(entry.get("generated_tokens"))
+            exact_prompt_tokens = _optional_int(entry.get("prompt_tokens"))
 
             record = {
                 "dataset_key": dataset_key,
@@ -187,7 +215,8 @@ def _persist_completed_run_entries(snapshot: dict[str, Any]) -> None:
                 "status": verdict["status"],
                 "score": verdict["score"],
                 "response_time_ms": round(float(entry.get("elapsed_ms", 0.0) or 0.0), 2),
-                "generated_tokens": _estimate_generated_tokens(response_text),
+                "generated_tokens": exact_generated_tokens if exact_generated_tokens is not None else _estimate_generated_tokens(response_text),
+                "generated_tokens_estimated": exact_generated_tokens is None,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "interrupted": bool(entry.get("interrupted")),
                 "auto_scored": bool(verdict.get("auto_scored")),
@@ -195,6 +224,8 @@ def _persist_completed_run_entries(snapshot: dict[str, Any]) -> None:
                 "run_id": run_id,
                 "session_id": session_id,
             }
+            if exact_prompt_tokens is not None:
+                record["prompt_tokens"] = exact_prompt_tokens
             rows = upsert_result(rows, record)
             persisted_keys.append(persist_key)
             changed = True
@@ -578,19 +609,24 @@ def get_run_status(*, run_id: int, session_id: str) -> dict[str, Any] | None:
         model_ref = model_ref_from_record({"model": item.get("model", ""), "model_source": item.get("source", "")})
         _, source = split_model_ref(model_ref, str(item.get("source", "") or CLOUD_SOURCE))
         host = str(item.get("host", "") or "").strip() or resolve_model_host(source)
-        status_entries.append(
-            {
-                "model": model_ref,
-                "source": source,
-                "host": host,
-                "running": bool(item.get("running")),
-                "completed": bool(item.get("completed")),
-                "interrupted": bool(item.get("interrupted")),
-                "error": str(item.get("error", "")),
-                "event": str(item.get("event", "")),
-                "elapsed_ms": float(item.get("elapsed_ms", 0.0)),
-            }
-        )
+        status_entry = {
+            "model": model_ref,
+            "source": source,
+            "host": host,
+            "running": bool(item.get("running")),
+            "completed": bool(item.get("completed")),
+            "interrupted": bool(item.get("interrupted")),
+            "error": str(item.get("error", "")),
+            "event": str(item.get("event", "")),
+            "elapsed_ms": float(item.get("elapsed_ms", 0.0)),
+        }
+        generated_tokens = _optional_int(item.get("generated_tokens"))
+        prompt_tokens = _optional_int(item.get("prompt_tokens"))
+        if generated_tokens is not None:
+            status_entry["generated_tokens"] = generated_tokens
+        if prompt_tokens is not None:
+            status_entry["prompt_tokens"] = prompt_tokens
+        status_entries.append(status_entry)
     return {
         "run_id": run_id,
         "session_id": str(snapshot.get("session_id", "")),
@@ -627,6 +663,7 @@ def _table_rows_model_leader_board(results: list[dict[str, Any]]) -> list[dict[s
     for row in metrics:
         median_ms = row.get("median_ms")
         median_seconds = round(float(median_ms) / 1000.0, 2) if median_ms is not None else None
+        avg_generated_tokens = row.get("avg_generated_tokens")
         output.append(
             {
                 "model": str(row.get("model", "")),
@@ -634,6 +671,7 @@ def _table_rows_model_leader_board(results: list[dict[str, Any]]) -> list[dict[s
                 "speed_score": round(float(row.get("latency_score", 0.0)), 1),
                 "success_scored": f"{int(row.get('success_count', 0))}/{int(row.get('scored_count', 0))}",
                 "median_seconds": median_seconds,
+                "avg_generated_tokens": round(float(avg_generated_tokens), 1) if avg_generated_tokens is not None else None,
             }
         )
     return output
@@ -710,9 +748,15 @@ def _format_matrix_cell(record: dict[str, Any] | None) -> str:
     status = str(record.get("status", "manual_review"))
     icon = {"success": "✅", "fail": "❌", "manual_review": "🟡"}.get(status, "🟡")
     latency = record.get("response_time_ms")
+    generated_tokens = _optional_int(record.get("generated_tokens"))
+    token_suffix = ""
+    if generated_tokens is not None:
+        token_suffix = f" | {generated_tokens} tok"
+        if record.get("generated_tokens_estimated") is True:
+            token_suffix += " (est.)"
     if latency is None:
-        return icon
-    return f"{icon} {float(latency) / 1000.0:.2f}s"
+        return f"{icon}{token_suffix}" if token_suffix else icon
+    return f"{icon} {float(latency) / 1000.0:.2f}s{token_suffix}"
 
 
 def record_prompt_hash(prompt: str) -> str:

@@ -858,6 +858,8 @@ def test_run_status_persists_completed_entries_with_model_source(monkeypatch, tm
                 "error": "",
                 "event": "entry_completed",
                 "elapsed_ms": 320.0,
+                "generated_tokens": 7,
+                "prompt_tokens": 4,
             }
         ],
     }
@@ -872,6 +874,8 @@ def test_run_status_persists_completed_entries_with_model_source(monkeypatch, tm
     assert payload is not None
     assert payload["entries"][0]["model"] == "gemma3:4b:local"
     assert payload["entries"][0]["source"] == "local"
+    assert payload["entries"][0]["generated_tokens"] == 7
+    assert payload["entries"][0]["prompt_tokens"] == 4
 
     results_path, _ = resolve_results_paths(dataset_key, data_dir, root_dir)
     persisted = json.loads(results_path.read_text(encoding="utf-8"))
@@ -880,4 +884,60 @@ def test_run_status_persists_completed_entries_with_model_source(monkeypatch, tm
     assert persisted[0]["model_source"] == "local"
     assert persisted[0]["model_host"] == "http://localhost:11434"
     assert persisted[0]["status"] == "success"
-    assert persisted[0]["generated_tokens"] >= 1
+    assert persisted[0]["generated_tokens"] == 7
+    assert persisted[0]["generated_tokens_estimated"] is False
+    assert persisted[0]["prompt_tokens"] == 4
+
+
+def test_get_results_backfills_estimated_generated_tokens_for_legacy_rows(monkeypatch, tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    root_dir = tmp_path
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "results_by_dataset").mkdir(parents=True, exist_ok=True)
+
+    dataset_key = "uploaded_demo"
+    dataset_signature = "sig-123"
+    question_id = "q001"
+
+    monkeypatch.setattr(api_service, "DATA_DIR", data_dir)
+    monkeypatch.setattr(api_service, "ROOT", root_dir)
+    monkeypatch.setattr(
+        api_service,
+        "_dataset_option_map",
+        lambda: {
+            dataset_key: {
+                "key": dataset_key,
+                "label": "Uploaded",
+                "is_default": False,
+                "path": tmp_path / "uploaded-demo.json",
+                "signature": dataset_signature,
+                "instruction": "",
+                "questions": [{"id": question_id, "prompt": "2+2 nedir?", "expected_answer": "4"}],
+            }
+        },
+    )
+
+    results_path, _ = resolve_results_paths(dataset_key, data_dir, root_dir)
+    legacy_row = {
+        "dataset_key": dataset_key,
+        "dataset_signature": dataset_signature,
+        "question_id": question_id,
+        "question_prompt_hash": "abc123",
+        "model": "gemma3:4b:local",
+        "response": "Dort",
+        "status": "manual_review",
+        "score": None,
+        "response_time_ms": 111.0,
+        "timestamp": "2026-04-09T00:00:00+00:00",
+        "interrupted": False,
+        "auto_scored": False,
+        "reason": "legacy",
+    }
+    results_path.write_text(json.dumps([legacy_row], ensure_ascii=False, indent=2), encoding="utf-8")
+
+    payload = api_service.get_results(dataset_key)
+
+    assert payload is not None
+    normalized_row = payload["results"][0]
+    assert normalized_row["generated_tokens"] == api_service._estimate_generated_tokens("Dort")
+    assert normalized_row["generated_tokens_estimated"] is True

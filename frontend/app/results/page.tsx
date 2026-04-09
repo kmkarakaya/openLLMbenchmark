@@ -86,6 +86,26 @@ export default function ResultsPage() {
 
   const metrics = useMemo(() => mapMetrics(results), [results]);
   const matrixRows = useMemo(() => mapMatrix(results), [results]);
+  const responseRows = useMemo(() => {
+    const rows = [...(results?.results ?? [])];
+    rows.sort((left, right) => {
+      const leftRecord = left as Record<string, unknown>;
+      const rightRecord = right as Record<string, unknown>;
+      const leftTimestamp = Date.parse(String(leftRecord.timestamp ?? ""));
+      const rightTimestamp = Date.parse(String(rightRecord.timestamp ?? ""));
+      const leftSortable = Number.isFinite(leftTimestamp) ? leftTimestamp : Number.NEGATIVE_INFINITY;
+      const rightSortable = Number.isFinite(rightTimestamp) ? rightTimestamp : Number.NEGATIVE_INFINITY;
+      if (leftSortable !== rightSortable) {
+        return rightSortable - leftSortable;
+      }
+      const modelCompare = String(rightRecord.model ?? "").localeCompare(String(leftRecord.model ?? ""));
+      if (modelCompare !== 0) {
+        return modelCompare;
+      }
+      return String(rightRecord.question_id ?? "").localeCompare(String(leftRecord.question_id ?? ""));
+    });
+    return rows;
+  }, [results]);
   const matrixModels = useMemo(
     () =>
       Array.from(
@@ -528,6 +548,12 @@ export default function ResultsPage() {
                 render: (row) => row.successOverScored
               },
               {
+                key: "avgTokens",
+                header: "Avg Tokens",
+                headerHelp: "Average generated response tokens across non-interrupted saved responses for this model.",
+                render: (row) => row.averageGeneratedTokens?.toFixed(1) ?? "-"
+              },
+              {
                 key: "median",
                 header: "Median (s)",
                 headerHelp: "Median response time in seconds. Lower is better.",
@@ -645,12 +671,25 @@ export default function ResultsPage() {
 
       <Card title="Response-Level Model Performance" actions={renderTableExportActions("response_level_model_performance")}>
         <DataTable
-          rows={results?.results ?? []}
+          rows={responseRows}
           emptyMessage="No detailed responses available yet."
           columns={[
             { key: "q", header: "Question", render: (row) => String((row as Record<string, unknown>).question_id ?? "-") },
             { key: "model", header: "Model", render: (row) => String((row as Record<string, unknown>).model ?? "-") },
             { key: "status", header: "Status", render: (row) => String((row as Record<string, unknown>).status ?? "-") },
+            {
+              key: "tokens",
+              header: "Generated Tokens",
+              render: (row) => {
+                const rawRow = row as Record<string, unknown>;
+                const tokens = rawRow.generated_tokens;
+                const estimated = rawRow.generated_tokens_estimated;
+                if (typeof tokens !== "number" || !Number.isFinite(tokens)) {
+                  return "-";
+                }
+                return `${tokens}${estimated === true ? " (est.)" : ""}`;
+              }
+            },
             { key: "reason", header: "Reason", render: (row) => String((row as Record<string, unknown>).reason ?? "-") },
             {
               key: "response",

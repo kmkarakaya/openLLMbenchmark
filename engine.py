@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import Iterator
+from dataclasses import dataclass
+from typing import Any, Iterator
 
 from ollama import Client
 
@@ -11,6 +12,42 @@ from model_identity import (
     normalize_model_source,
     resolve_model_host,
 )
+
+
+@dataclass(frozen=True)
+class ChatStreamEvent:
+    content: str = ""
+    done: bool = False
+    generated_tokens: int | None = None
+    prompt_tokens: int | None = None
+
+
+def _chunk_value(chunk: Any, key: str) -> Any:
+    if isinstance(chunk, dict):
+        return chunk.get(key)
+    return getattr(chunk, key, None)
+
+
+def _chunk_content(chunk: Any) -> str:
+    content = ""
+    message = _chunk_value(chunk, "message")
+    if isinstance(message, dict):
+        content = str(message.get("content", "") or "")
+    elif message is not None:
+        content = str(getattr(message, "content", "") or "")
+    if not content:
+        content = str(_chunk_value(chunk, "response") or "")
+    return content
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
 
 
 def get_cloud_client() -> Client:
@@ -65,12 +102,12 @@ def list_models(client: Client, *, source: str = CLOUD_SOURCE) -> list[str]:
     return sorted(set(models))
 
 
-def stream_chat(
+def stream_chat_events(
     client: Client,
     model: str,
     prompt: str,
     system_prompt: str = "",
-) -> Iterator[str]:
+) -> Iterator[ChatStreamEvent]:
     messages = []
     if system_prompt.strip():
         messages.append({"role": "system", "content": system_prompt.strip()})
@@ -78,20 +115,25 @@ def stream_chat(
 
     stream = client.chat(model=model, messages=messages, stream=True)
     for chunk in stream:
-        content = ""
-        if isinstance(chunk, dict):
-            message = chunk.get("message", {})
-            if isinstance(message, dict):
-                content = message.get("content", "") or ""
-            if not content:
-                content = chunk.get("response", "") or ""
-        else:
-            message = getattr(chunk, "message", None)
-            if isinstance(message, dict):
-                content = message.get("content", "") or ""
-            elif message is not None:
-                content = getattr(message, "content", "") or ""
-            if not content:
-                content = getattr(chunk, "response", "") or ""
-        if content:
-            yield content
+        content = _chunk_content(chunk)
+        done = bool(_chunk_value(chunk, "done"))
+        generated_tokens = _optional_int(_chunk_value(chunk, "eval_count"))
+        prompt_tokens = _optional_int(_chunk_value(chunk, "prompt_eval_count"))
+        if content or done or generated_tokens is not None or prompt_tokens is not None:
+            yield ChatStreamEvent(
+                content=content,
+                done=done,
+                generated_tokens=generated_tokens,
+                prompt_tokens=prompt_tokens,
+            )
+
+
+def stream_chat(
+    client: Client,
+    model: str,
+    prompt: str,
+    system_prompt: str = "",
+) -> Iterator[str]:
+    for event in stream_chat_events(client=client, model=model, prompt=prompt, system_prompt=system_prompt):
+        if event.content:
+            yield event.content

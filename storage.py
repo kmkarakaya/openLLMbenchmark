@@ -103,6 +103,25 @@ def percentile(values: list[float], pct: float) -> float | None:
     return data[low] * (1 - weight) + data[high] * weight
 
 
+def _generated_tokens_value(record: dict[str, Any]) -> float | None:
+    value = record.get("generated_tokens")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _format_generated_tokens(record: dict[str, Any]) -> str | None:
+    generated_tokens = _generated_tokens_value(record)
+    if generated_tokens is None:
+        return None
+    label = f"{generated_tokens:.0f} tok"
+    if record.get("generated_tokens_estimated") is True:
+        return f"{label} (est.)"
+    return label
+
+
 def compute_model_metrics(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_model: dict[str, list[dict[str, Any]]] = {}
     for record in results:
@@ -123,9 +142,17 @@ def compute_model_metrics(results: list[dict[str, Any]]) -> list[dict[str, Any]]
             for x in items
             if x.get("response_time_ms") is not None and not x.get("interrupted", False)
         ]
+        token_counts = [
+            token_count
+            for x in items
+            if not x.get("interrupted", False)
+            for token_count in [_generated_tokens_value(x)]
+            if token_count is not None
+        ]
         median_ms = statistics.median(latencies) if latencies else None
         mean_ms = statistics.mean(latencies) if latencies else None
         p95_ms = percentile(latencies, 95) if latencies else None
+        avg_generated_tokens = statistics.mean(token_counts) if token_counts else None
 
         rows.append(
             {
@@ -136,6 +163,7 @@ def compute_model_metrics(results: list[dict[str, Any]]) -> list[dict[str, Any]]
                 "median_ms": median_ms,
                 "mean_ms": mean_ms,
                 "p95_ms": p95_ms,
+                "avg_generated_tokens": avg_generated_tokens,
                 "latency_score": 0.0,
             }
         )
@@ -163,9 +191,12 @@ def format_cell(record: dict[str, Any] | None) -> str:
         return "-"
     icon = STATUS_ICON.get(record.get("status", "manual_review"), "🟡")
     latency_ms = record.get("response_time_ms")
+    token_text = _format_generated_tokens(record)
     if latency_ms is None:
-        return icon
+        return f"{icon} {token_text}" if token_text else icon
     seconds = float(latency_ms) / 1000.0
+    if token_text:
+        return f"{icon} {seconds:.2f}s | {token_text}"
     return f"{icon} {seconds:.2f}s"
 
 
@@ -191,16 +222,17 @@ def render_results_markdown(
     if metrics:
         lines.append("## Model Karşılaştırma")
         lines.append(
-            "| Model | Accuracy % | Success/Scored | Median | Mean | P95 | Latency Score |"
+            "| Model | Accuracy % | Success/Scored | Median | Mean | P95 | Avg Tokens | Latency Score |"
         )
-        lines.append("|---|---:|---:|---:|---:|---:|---:|")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
         for row in metrics:
             median = f"{row['median_ms']/1000:.2f}s" if row["median_ms"] else "-"
             mean = f"{row['mean_ms']/1000:.2f}s" if row["mean_ms"] else "-"
             p95 = f"{row['p95_ms']/1000:.2f}s" if row["p95_ms"] else "-"
+            avg_tokens = f"{row['avg_generated_tokens']:.1f}" if row.get("avg_generated_tokens") is not None else "-"
             lines.append(
                 f"| {row['model']} | {row['accuracy_percent']:.1f} | "
-                f"{row['success_count']}/{row['scored_count']} | {median} | {mean} | {p95} | "
+                f"{row['success_count']}/{row['scored_count']} | {median} | {mean} | {p95} | {avg_tokens} | "
                 f"{row['latency_score']:.1f} |"
             )
         lines.append("")
