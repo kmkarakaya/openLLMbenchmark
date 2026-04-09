@@ -214,6 +214,18 @@ test("navigation: sidebar/topbar with required pages", async ({ page }) => {
   await expect(page.getByRole("link", { name: /Export Excel/ })).toHaveCount(0);
 });
 
+test("system status does not show degraded when only local-only slo endpoint is blocked", async ({ page }) => {
+  await mockBaseApi(page);
+  await page.route(new RegExp(`${API_HOST}/ops/slo$`), async (route) => {
+    await route.fulfill({ status: 403, json: { detail: "Local/internal endpoint only." } });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByText("Health: ok (v1) | SLO: not available on public Space")).toBeVisible();
+  await expect(page.getByText("API degraded:")).toHaveCount(0);
+});
+
 test("configure page is strict setup-only", async ({ page }) => {
   await mockBaseApi(page);
   await page.goto("/configure");

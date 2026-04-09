@@ -25,6 +25,58 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [resettingSlo, setResettingSlo] = useState(false);
   const [banner, setBanner] = useState<{ tone: "info" | "warning" | "danger" | "success"; title: string; message: string } | null>(null);
 
+  const syncSystemStatus = async (isActive: () => boolean = () => true) => {
+    const [healthResult, sloResult] = await Promise.allSettled([getHealth(), getSloStatus()]);
+
+    if (!isActive()) {
+      return;
+    }
+
+    if (healthResult.status === "rejected") {
+      const error = healthResult.reason;
+      const message = error instanceof ApiError ? error.message : "API status check failed";
+      setBanner({
+        tone: "danger",
+        title: "API degraded:",
+        message
+      });
+      setHealthLabel("unavailable");
+      setSloLabel("unknown");
+      return;
+    }
+
+    setHealthLabel(`${healthResult.value.status} (${healthResult.value.version})`);
+
+    if (sloResult.status === "fulfilled") {
+      const slo = sloResult.value;
+      setSloLabel(slo.breached ? "breached" : "ok");
+      if (slo.breached) {
+        setBanner({
+          tone: "warning",
+          title: "SLO breach:",
+          message: "Run operations may be throttled or disabled until the system stabilizes."
+        });
+      } else {
+        setBanner(null);
+      }
+      return;
+    }
+
+    const sloError = sloResult.reason;
+    if (sloError instanceof ApiError && sloError.status === 403) {
+      setSloLabel("not available on public Space");
+      setBanner(null);
+      return;
+    }
+
+    setSloLabel("unknown");
+    setBanner({
+      tone: "info",
+      title: "SLO unavailable:",
+      message: "Operational SLO status could not be loaded, but the API health check is still passing."
+    });
+  };
+
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname]);
@@ -34,21 +86,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
     const run = async () => {
       try {
-        const [health, slo] = await Promise.all([getHealth(), getSloStatus()]);
-        if (!active) {
-          return;
-        }
-        setHealthLabel(`${health.status} (${health.version})`);
-        setSloLabel(slo.breached ? "breached" : "ok");
-        if (slo.breached) {
-          setBanner({
-            tone: "warning",
-            title: "SLO breach:",
-            message: "Run operations may be throttled or disabled until the system stabilizes."
-          });
-        } else {
-          setBanner(null);
-        }
+        await syncSystemStatus(() => active);
       } catch (error) {
         if (!active) {
           return;
@@ -73,18 +111,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshSystemStatus = async () => {
-    const [health, slo] = await Promise.all([getHealth(), getSloStatus()]);
-    setHealthLabel(`${health.status} (${health.version})`);
-    setSloLabel(slo.breached ? "breached" : "ok");
-    if (slo.breached) {
-      setBanner({
-        tone: "warning",
-        title: "SLO breach:",
-        message: "Run operations may be throttled or disabled until the system stabilizes."
-      });
-    } else {
-      setBanner(null);
-    }
+    await syncSystemStatus();
   };
 
   const handleResetSlo = async () => {
