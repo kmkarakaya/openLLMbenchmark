@@ -70,7 +70,11 @@ def _ollama_api_key_from_request(request: Request) -> str:
 def _requires_cloud_access(models: object) -> bool:
     if not isinstance(models, list):
         return False
-    return any(split_model_ref(str(model or ""))[1] == CLOUD_SOURCE for model in models)
+    for model in models:
+        raw_model = str(model or "").strip().lower()
+        if raw_model.endswith(f":{CLOUD_SOURCE}"):
+            return True
+    return False
 
 
 def _record_terminal_run_outcome(
