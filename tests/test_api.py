@@ -589,9 +589,13 @@ def test_manual_results_write_updates_dataset_scoped_record(monkeypatch, tmp_pat
     assert body["result"]["status"] == "success"
     assert body["result"]["score"] == 1
     assert body["result"]["auto_scored"] is False
+    assert body["result"]["evaluation"] == "Successful"
+    assert body["result"]["evaluation_method"] == "Manual"
     assert body["result"]["reason"] == "User approval"
     persisted = json.loads(results_path.read_text(encoding="utf-8"))
     assert persisted[0]["status"] == "success"
+    assert persisted[0]["evaluation"] == "Successful"
+    assert persisted[0]["evaluation_method"] == "Manual"
     assert persisted[0]["dataset_key"] == "uploaded_demo"
     assert persisted[0]["dataset_signature"] == "sig-123"
     assert persisted[0]["question_prompt_hash"] == hashlib.sha256("Prompt text".encode("utf-8")).hexdigest()[:16]
@@ -884,6 +888,8 @@ def test_run_status_persists_completed_entries_with_model_source(monkeypatch, tm
     assert persisted[0]["model_source"] == "local"
     assert persisted[0]["model_host"] == "http://localhost:11434"
     assert persisted[0]["status"] == "success"
+    assert persisted[0]["evaluation"] == "Successful"
+    assert persisted[0]["evaluation_method"] == "Automatic"
     assert persisted[0]["generated_tokens"] == 7
     assert persisted[0]["generated_tokens_estimated"] is False
     assert persisted[0]["prompt_tokens"] == 4
@@ -939,5 +945,7 @@ def test_get_results_backfills_estimated_generated_tokens_for_legacy_rows(monkey
 
     assert payload is not None
     normalized_row = payload["results"][0]
+    assert normalized_row["evaluation"] == "Needs Review"
+    assert normalized_row["evaluation_method"] == "Manual"
     assert normalized_row["generated_tokens"] == api_service._estimate_generated_tokens("Dort")
     assert normalized_row["generated_tokens_estimated"] is True

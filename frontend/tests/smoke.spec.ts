@@ -271,6 +271,123 @@ test("state handling: toast + banner shown on run start failure", async ({ page 
   await expect(page.getByText("Runs are temporarily unavailable due to SSE SLO breach.").first()).toBeVisible();
 });
 
+test("run page only auto-sends after navigator move", async ({ page }) => {
+  await mockBaseApi(page);
+
+  const API_HOST_DIRECT = "http://(localhost|127\\.0\\.0\\.1):(8000|18000)";
+  const API_HOST_PROXY = "http://(localhost|127\\.0\\.0\\.1):3011/api";
+  const API_HOST = `(?:${API_HOST_DIRECT}|${API_HOST_PROXY})`;
+  const runBodies: Array<{ question_id: string; models: string[] }> = [];
+  const runPayloadById = new Map<number, { question_id: string; models: string[] }>();
+  const emptyResultsPayload = {
+    dataset_key: "default_tr",
+    results: [],
+    metrics: [],
+    matrix: []
+  };
+  let nextRunId = 200;
+
+  await page.route(new RegExp(`${API_HOST}/runs$`), async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+
+    const body = route.request().postDataJSON() as { question_id: string; models: string[] };
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const runId = nextRunId;
+    nextRunId += 1;
+    runBodies.push(body);
+    runPayloadById.set(runId, body);
+    await route.fulfill({
+      status: 201,
+      json: { run_id: runId, status: "started", session_id: "ui-test-session" }
+    });
+  });
+
+  await page.route(new RegExp(`${API_HOST}/runs/\\d+/events\\?.+`), async (route) => {
+    const match = route.request().url().match(/\/runs\/(\d+)\/events/);
+    const runId = match ? Number(match[1]) : 0;
+    const body = runPayloadById.get(runId);
+    const model = body?.models[0] ?? "gemma3:4b";
+    const questionId = body?.question_id ?? "q001";
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+      body: [
+        "event: chunk",
+        `data: {"run_id":${runId},"model":"${model}","response":"${questionId}-auto-response"}`,
+        "",
+        "event: entry_completed",
+        `data: {"run_id":${runId},"model":"${model}","elapsed_ms":850}`,
+        "",
+        "event: run_completed",
+        `data: {"run_id":${runId}}`,
+        ""
+      ].join("\n")
+    });
+  });
+
+  await page.route(new RegExp(`${API_HOST}/runs/\\d+/status\\?.+`), async (route) => {
+    const match = route.request().url().match(/\/runs\/(\d+)\/status/);
+    const runId = match ? Number(match[1]) : 0;
+    const body = runPayloadById.get(runId);
+    const model = body?.models[0] ?? "gemma3:4b";
+    const questionId = body?.question_id ?? "q001";
+    await route.fulfill({
+      status: 200,
+      json: {
+        run_id: runId,
+        session_id: "ui-test-session",
+        dataset_key: "default_tr",
+        question_id: questionId,
+        running: false,
+        completed: true,
+        interrupted: false,
+        error: "",
+        entries: [
+          {
+            model,
+            running: false,
+            completed: true,
+            interrupted: false,
+            error: "",
+            event: "completed",
+            elapsed_ms: 850
+          }
+        ]
+      }
+    });
+  });
+
+  await page.route(new RegExp(`${API_HOST}/results\?.+`), async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await route.fulfill({
+      json: emptyResultsPayload
+    });
+  });
+
+  await page.goto("/configure");
+  await page.getByTestId("configure-mode").selectOption("single");
+  await page.locator("label:has-text('Primary Model') select").selectOption("gemma3:4b");
+
+  await page.locator("aside").getByRole("link", { name: "Benchmark Run", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Benchmark Run", exact: true })).toBeVisible();
+  await expect(page.locator("[data-testid='run-responses-layout'] textarea").first()).toHaveValue("");
+  await page.waitForTimeout(700);
+  expect(runBodies.length).toBe(0);
+
+  const previousButton = page.getByRole("button", { name: "Previous", exact: true });
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(previousButton).toBeDisabled();
+
+  await expect.poll(() => runBodies.length).toBe(1);
+  expect(runBodies[0]?.question_id).toBe("q002");
+  expect(runBodies[0]?.models).toEqual(["gemma3:4b"]);
+  await expect(page.locator("[data-testid='run-responses-layout'] textarea").first()).toHaveValue("q002-auto-response");
+  await expect(previousButton).toBeEnabled();
+});
+
 test("results page allows model history deletion and refreshes data", async ({ page }) => {
   await mockBaseApi(page);
   page.on("dialog", async (dialog) => {

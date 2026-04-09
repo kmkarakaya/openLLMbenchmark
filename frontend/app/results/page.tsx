@@ -24,6 +24,8 @@ import {
   buildCategoryModelPerformance,
   buildHardnessModelPerformance,
   buildMetadataDistributions,
+  evaluationLabelFromRecord,
+  evaluationMethodLabelFromRecord,
   mapMatrix,
   mapMetrics
 } from "../../lib/view-models";
@@ -543,7 +545,7 @@ export default function ResultsPage() {
               },
               {
                 key: "success",
-                header: "Success/Scored",
+                header: "Success vs Tested",
                 headerHelp: "Successful answers / total scored questions. This column is not a higher/lower-is-better metric.",
                 render: (row) => row.successOverScored
               },
@@ -676,7 +678,16 @@ export default function ResultsPage() {
           columns={[
             { key: "q", header: "Question", render: (row) => String((row as Record<string, unknown>).question_id ?? "-") },
             { key: "model", header: "Model", render: (row) => String((row as Record<string, unknown>).model ?? "-") },
-            { key: "status", header: "Status", render: (row) => String((row as Record<string, unknown>).status ?? "-") },
+            {
+              key: "evaluation",
+              header: "Evaluation",
+              render: (row) => evaluationLabelFromRecord(row as Record<string, unknown>)
+            },
+            {
+              key: "evaluationMethod",
+              header: "Evaluation Method",
+              render: (row) => evaluationMethodLabelFromRecord(row as Record<string, unknown>)
+            },
             {
               key: "tokens",
               header: "Generated Tokens",

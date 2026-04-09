@@ -289,6 +289,7 @@ async def run_events(
                             "host": host,
                             "interrupted": bool(entry.get("interrupted")),
                             "error": str(entry.get("error", "")),
+                            "elapsed_ms": float(entry.get("elapsed_ms", 0.0) or 0.0),
                         }
                         yield {"event": event_name, "data": json.dumps(payload)}
 

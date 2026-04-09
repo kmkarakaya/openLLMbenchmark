@@ -11,7 +11,7 @@ import { useToast } from "../../components/toast-host";
 import { ApiError, applyManualDecision, getQuestions, getResults, getRunStatus, runEventsUrl, startRun, stopRun } from "../../lib/api";
 import { useAppState } from "../../lib/app-state";
 import type { BenchmarkQuestion, RunStatusResponse } from "../../lib/types";
-import { hasModelSelectionError, resolveActiveModels, runStateFromStatus } from "../../lib/view-models";
+import { evaluationLabelFromRecord, evaluationMethodLabelFromRecord, hasModelSelectionError, resolveActiveModels, runStateFromStatus } from "../../lib/view-models";
 
 function escapeHtml(text: string): string {
   return text
@@ -109,6 +109,8 @@ type SavedResultMeta = {
   generatedTokens: number;
   generatedTokensEstimated: boolean;
   eventLabel: string;
+  evaluationLabel: string;
+  evaluationMethodLabel: string;
 };
 
 function readGeneratedTokensMeta(savedResult: Record<string, unknown>, responseText: string): Pick<SavedResultMeta, "generatedTokens" | "generatedTokensEstimated"> {
@@ -123,6 +125,22 @@ function readGeneratedTokensMeta(savedResult: Record<string, unknown>, responseT
   return {
     generatedTokens: estimateTokenCount(responseText),
     generatedTokensEstimated: true
+  };
+}
+
+function buildSavedResultMeta(savedResult: Record<string, unknown>): SavedResultMeta {
+  const responseText = String(savedResult.response ?? "");
+  const tokenMeta = readGeneratedTokensMeta(savedResult, responseText);
+  return {
+    responseTimeMs:
+      typeof savedResult.response_time_ms === "number" && Number.isFinite(savedResult.response_time_ms)
+        ? Number(savedResult.response_time_ms)
+        : undefined,
+    generatedTokens: tokenMeta.generatedTokens,
+    generatedTokensEstimated: tokenMeta.generatedTokensEstimated,
+    eventLabel: String(savedResult.status ?? "saved") || "saved",
+    evaluationLabel: evaluationLabelFromRecord(savedResult),
+    evaluationMethodLabel: evaluationMethodLabelFromRecord(savedResult)
   };
 }
 
@@ -142,8 +160,24 @@ export default function RunPage() {
   const [isStarting, setIsStarting] = useState(false);
   const [runStartedAtMs, setRunStartedAtMs] = useState<number | null>(null);
   const [liveClockMs, setLiveClockMs] = useState(() => Date.now());
+  const [completedEntryElapsedMs, setCompletedEntryElapsedMs] = useState<Record<string, number>>({});
+  const [activeRunModels, setActiveRunModels] = useState<string[]>([]);
+  const [savedResponsesStatus, setSavedResponsesStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [pendingAutoStartKey, setPendingAutoStartKey] = useState<string>("");
   const [inlineBanner, setInlineBanner] = useState<{ tone: "info" | "warning" | "danger" | "success"; title: string; message: string } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  const rememberCompletedElapsedMs = (model: string, elapsedMs: number) => {
+    if (!model || !Number.isFinite(elapsedMs) || elapsedMs < 0) {
+      return;
+    }
+    setCompletedEntryElapsedMs((prev) => {
+      if (prev[model] === elapsedMs) {
+        return prev;
+      }
+      return { ...prev, [model]: elapsedMs };
+    });
+  };
 
   const selectedModels = useMemo(() => resolveActiveModels(config), [config]);
   const configError = hasModelSelectionError(config);
@@ -164,8 +198,16 @@ export default function RunPage() {
     : "idle";
   const isAwaitingRunStatus = runId !== null && runStatus === null;
   const runInProgress = isStarting || runState === "running" || isAwaitingRunStatus;
+  const autoStartPending = pendingAutoStartKey.length > 0;
+  const navigatorLocked = runInProgress || autoStartPending;
   const stateLabel = runInProgress ? "Response being generated" : runState;
   const selectedModelsKey = useMemo(() => selectedModels.join("|"), [selectedModels]);
+  const activeQuestionLookupKey = useMemo(() => {
+    if (!activeQuestion) {
+      return "";
+    }
+    return `${config.datasetKey}::${activeQuestion.id}::${selectedModelsKey}`;
+  }, [config.datasetKey, activeQuestion, selectedModelsKey]);
 
   useEffect(() => {
     if (!runInProgress) {
@@ -218,6 +260,11 @@ export default function RunPage() {
       try {
         const status = await getRunStatus(runId, sessionId);
         setRunStatus(status);
+        status.entries.forEach((entry) => {
+          if (entry.completed && typeof entry.elapsed_ms === "number") {
+            rememberCompletedElapsedMs(entry.model, entry.elapsed_ms);
+          }
+        });
         const mappedResponses: Record<string, string> = {};
         status.entries.forEach((entry) => {
           if (entry.model) {
@@ -255,11 +302,14 @@ export default function RunPage() {
       if (!activeQuestion || !selectedModels.length) {
         setResponses({});
         setSavedResultMeta({});
+        setSavedResponsesStatus("idle");
         return;
       }
       if (runState === "running") {
         return;
       }
+
+      setSavedResponsesStatus("loading");
 
       try {
         const payload = await getResults(config.datasetKey);
@@ -272,25 +322,19 @@ export default function RunPage() {
           const savedResult = findLatestSavedResult(payload.results, activeQuestion.id, model);
           mapped[model] = savedResult ? String(savedResult.response ?? "") : "";
           if (savedResult) {
-            const responseText = String(savedResult.response ?? "");
-            const tokenMeta = readGeneratedTokensMeta(savedResult, responseText);
-            savedMetaByModel[model] = {
-              responseTimeMs:
-                typeof savedResult.response_time_ms === "number" && Number.isFinite(savedResult.response_time_ms)
-                  ? Number(savedResult.response_time_ms)
-                  : undefined,
-              generatedTokens: tokenMeta.generatedTokens,
-              generatedTokensEstimated: tokenMeta.generatedTokensEstimated,
-              eventLabel: String(savedResult.status ?? "saved") || "saved"
-            };
+            savedMetaByModel[model] = buildSavedResultMeta(savedResult);
           }
         }
         setResponses(mapped);
         setSavedResultMeta(savedMetaByModel);
+        setCompletedEntryElapsedMs({});
+        setSavedResponsesStatus("ready");
       } catch {
         if (active) {
           setResponses({});
           setSavedResultMeta({});
+          setCompletedEntryElapsedMs({});
+          setSavedResponsesStatus("error");
         }
       }
     };
@@ -300,6 +344,123 @@ export default function RunPage() {
       active = false;
     };
   }, [config.datasetKey, activeQuestion?.id, selectedModelsKey, runState]);
+
+  const handleStart = async (modelsOverride?: string[]) => {
+    const modelsToRun = Array.from(new Set((modelsOverride ?? selectedModels).map((model) => model.trim()).filter(Boolean)));
+    if (!activeQuestion || !canStart || isStarting || !modelsToRun.length) {
+      return;
+    }
+    setIsStarting(true);
+    setInlineBanner(null);
+    try {
+      const payload = await startRun({
+        session_id: sessionId,
+        dataset_key: config.datasetKey,
+        question_id: activeQuestion.id,
+        models: modelsToRun,
+        system_prompt: config.systemPrompt
+      });
+      setRunStartedAtMs(Date.now());
+      setCompletedEntryElapsedMs({});
+      setActiveRunModels(modelsToRun);
+      setRunId(payload.run_id);
+      setRunStatus(null);
+      setResponses((prev) => {
+        const next = { ...prev };
+        modelsToRun.forEach((model) => {
+          next[model] = "";
+        });
+        return next;
+      });
+      setSavedResultMeta((prev) => {
+        const next = { ...prev };
+        modelsToRun.forEach((model) => {
+          delete next[model];
+        });
+        return next;
+      });
+      addRunHistory({
+        runId: payload.run_id,
+        datasetKey: config.datasetKey,
+        models: modelsToRun,
+        startedAt: new Date().toISOString(),
+        status: "started"
+      });
+      pushToast("success", `Run ${payload.run_id} started.`);
+      openRunStream(payload.run_id);
+    } catch (exc) {
+      const message = exc instanceof Error ? exc.message : String(exc);
+      if (exc instanceof ApiError && exc.status === 503) {
+        setInlineBanner({ tone: "warning", title: "Run unavailable:", message });
+      } else if (exc instanceof ApiError && exc.status === 409) {
+        const conflictRunId = Number(exc.payload.run_id ?? 0);
+        if (Number.isFinite(conflictRunId) && conflictRunId > 0) {
+          setRunStartedAtMs(Date.now());
+          setCompletedEntryElapsedMs({});
+          setActiveRunModels(modelsToRun);
+          setRunId(conflictRunId);
+          setSavedResultMeta((prev) => {
+            const next = { ...prev };
+            modelsToRun.forEach((model) => {
+              delete next[model];
+            });
+            return next;
+          });
+          openRunStream(conflictRunId);
+          setInlineBanner({
+            tone: "warning",
+            title: "Run already active:",
+            message: `Attached to active run ${conflictRunId} for this session.`
+          });
+          pushToast("warning", `Attached to active run ${conflictRunId}.`);
+        } else {
+          setInlineBanner({
+            tone: "warning",
+            title: "Run already active:",
+            message: "A run is already active for this session. Wait for completion or stop it first."
+          });
+          pushToast("warning", "A run is already active for this session.");
+        }
+      } else {
+        setInlineBanner({ tone: "danger", title: "Run start failed:", message });
+        pushToast("danger", message);
+      }
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const handleQuestionNavigation = (nextQuestionId: string) => {
+    const normalizedQuestionId = String(nextQuestionId || "").trim();
+    if (!normalizedQuestionId || normalizedQuestionId === config.questionId) {
+      return;
+    }
+    setPendingAutoStartKey(`${config.datasetKey}::${normalizedQuestionId}::${selectedModelsKey}`);
+    setConfig({ questionId: normalizedQuestionId });
+  };
+
+  useEffect(() => {
+    if (!activeQuestion || !activeQuestionLookupKey) {
+      return;
+    }
+    if (pendingAutoStartKey !== activeQuestionLookupKey) {
+      return;
+    }
+    if (savedResponsesStatus === "error") {
+      setPendingAutoStartKey("");
+      return;
+    }
+    if (savedResponsesStatus !== "ready" || runInProgress || !canStart) {
+      return;
+    }
+
+    const missingModels = selectedModels.filter((model) => !savedResultMeta[model]);
+    setPendingAutoStartKey("");
+    if (!missingModels.length) {
+      return;
+    }
+    void handleStart(missingModels);
+  }, [activeQuestion, activeQuestionLookupKey, canStart, pendingAutoStartKey, runInProgress, savedResponsesStatus, savedResultMeta, selectedModels]);
 
   const openRunStream = (nextRunId: number) => {
     eventSourceRef.current?.close();
@@ -317,13 +478,31 @@ export default function RunPage() {
         // ignore malformed events
       }
     });
+    source.addEventListener("entry_completed", (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data) as { model?: string; elapsed_ms?: number };
+        if (payload.model && typeof payload.elapsed_ms === "number") {
+          rememberCompletedElapsedMs(payload.model, payload.elapsed_ms);
+        }
+      } catch {
+        // ignore malformed completion events
+      }
+    });
     source.addEventListener("run_completed", () => {
       updateRunHistory(nextRunId, "completed");
       pushToast("success", `Run ${nextRunId} completed.`);
       setInlineBanner({ tone: "success", title: "Run completed:", message: `Run ${nextRunId} finished successfully.` });
       source.close();
     });
-    source.addEventListener("run_interrupted", () => {
+    source.addEventListener("run_interrupted", (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data) as { model?: string; elapsed_ms?: number };
+        if (payload.model && typeof payload.elapsed_ms === "number") {
+          rememberCompletedElapsedMs(payload.model, payload.elapsed_ms);
+        }
+      } catch {
+        // ignore malformed interruption events
+      }
       if (interruptedNotified) {
         return;
       }
@@ -353,66 +532,6 @@ export default function RunPage() {
     eventSourceRef.current = source;
   };
 
-  const handleStart = async () => {
-    if (!activeQuestion || !canStart || isStarting) {
-      return;
-    }
-    setIsStarting(true);
-    setInlineBanner(null);
-    try {
-      const payload = await startRun({
-        session_id: sessionId,
-        dataset_key: config.datasetKey,
-        question_id: activeQuestion.id,
-        models: selectedModels,
-        system_prompt: config.systemPrompt
-      });
-      setRunStartedAtMs(Date.now());
-      setRunId(payload.run_id);
-      setRunStatus(null);
-      setResponses({});
-      addRunHistory({
-        runId: payload.run_id,
-        datasetKey: config.datasetKey,
-        models: selectedModels,
-        startedAt: new Date().toISOString(),
-        status: "started"
-      });
-      pushToast("success", `Run ${payload.run_id} started.`);
-      openRunStream(payload.run_id);
-    } catch (exc) {
-      const message = exc instanceof Error ? exc.message : String(exc);
-      if (exc instanceof ApiError && exc.status === 503) {
-        setInlineBanner({ tone: "warning", title: "Run unavailable:", message });
-      } else if (exc instanceof ApiError && exc.status === 409) {
-        const conflictRunId = Number(exc.payload.run_id ?? 0);
-        if (Number.isFinite(conflictRunId) && conflictRunId > 0) {
-          setRunStartedAtMs(Date.now());
-          setRunId(conflictRunId);
-          openRunStream(conflictRunId);
-          setInlineBanner({
-            tone: "warning",
-            title: "Run already active:",
-            message: `Attached to active run ${conflictRunId} for this session.`
-          });
-          pushToast("warning", `Attached to active run ${conflictRunId}.`);
-        } else {
-          setInlineBanner({
-            tone: "warning",
-            title: "Run already active:",
-            message: "A run is already active for this session. Wait for completion or stop it first."
-          });
-          pushToast("warning", "A run is already active for this session.");
-        }
-      } else {
-        setInlineBanner({ tone: "danger", title: "Run start failed:", message });
-        pushToast("danger", message);
-      }
-    } finally {
-      setIsStarting(false);
-    }
-  };
-
   const handleStop = async () => {
     if (!runId) {
       return;
@@ -440,12 +559,21 @@ export default function RunPage() {
       return;
     }
     try {
-      await applyManualDecision({
+      const payload = await applyManualDecision({
         dataset_key: config.datasetKey,
         question_id: activeQuestion.id,
         model,
         status
       });
+      const updatedResult = payload.result;
+      setSavedResultMeta((prev) => ({
+        ...prev,
+        [model]: buildSavedResultMeta(updatedResult)
+      }));
+      setResponses((prev) => ({
+        ...prev,
+        [model]: String(updatedResult.response ?? prev[model] ?? "")
+      }));
       pushToast("success", `Manual decision saved: ${model} -> ${status}`);
     } catch (exc) {
       pushToast("danger", exc instanceof Error ? exc.message : String(exc));
@@ -576,11 +704,11 @@ export default function RunPage() {
             }
           >
             <div className="grid gap-3">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   className="focus-ring rounded-ui border border-border px-3 py-2 text-sm"
-                  onClick={() => setConfig({ questionId: questions[Math.max(0, questionIndex - 1)].id })}
-                  disabled={questionIndex <= 0}
+                  onClick={() => handleQuestionNavigation(questions[Math.max(0, questionIndex - 1)].id)}
+                  disabled={questionIndex <= 0 || navigatorLocked}
                 >
                   Previous
                 </button>
@@ -589,13 +717,26 @@ export default function RunPage() {
                 </span>
                 <button
                   className="focus-ring rounded-ui border border-border px-3 py-2 text-sm"
-                  onClick={() => setConfig({ questionId: questions[Math.min(questions.length - 1, questionIndex + 1)].id })}
-                  disabled={questionIndex >= questions.length - 1}
+                  onClick={() => handleQuestionNavigation(questions[Math.min(questions.length - 1, questionIndex + 1)].id)}
+                  disabled={questionIndex >= questions.length - 1 || navigatorLocked}
                 >
                   Next
                 </button>
+                <button
+                  className="focus-ring rounded-ui bg-primary px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => void handleStart()}
+                  disabled={!canStart || navigatorLocked}
+                >
+                  {isStarting ? "Sending..." : "Send"}
+                </button>
+                <button
+                  className="focus-ring rounded-ui border border-border bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={handleStop}
+                  disabled={!runId || !runInProgress}
+                >
+                  Stop
+                </button>
               </div>
-              <p className="mb-1 text-sm font-semibold">{activeQuestion?.id}</p>
               <div
                 className={questionLayout === "horizontal" ? "grid items-start gap-3 md:grid-cols-2" : "grid gap-3"}
                 data-testid="run-question-layout"
@@ -618,22 +759,6 @@ export default function RunPage() {
                     }`}
                   />
                 </div>
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <button
-                  className="focus-ring rounded-ui bg-primary px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={handleStart}
-                  disabled={!canStart || runInProgress}
-                >
-                  {isStarting ? "Sending..." : "Send"}
-                </button>
-                <button
-                  className="focus-ring rounded-ui border border-border bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={handleStop}
-                  disabled={!runId || !runInProgress}
-                >
-                  Stop
-                </button>
               </div>
             </div>
           </Card>
@@ -694,7 +819,14 @@ export default function RunPage() {
             const persistedMeta = savedResultMeta[model];
             const statusElapsedMs = typeof statusEntry?.elapsed_ms === "number" ? statusEntry.elapsed_ms : undefined;
             const liveElapsedMs = runStartedAtMs !== null ? Math.max(0, liveClockMs - runStartedAtMs) : undefined;
-            const durationMs = runInProgress
+            const completedElapsedMs = completedEntryElapsedMs[model];
+            const modelIsInActiveRun = activeRunModels.includes(model);
+            const entryInProgress = statusEntry
+              ? statusEntry.running && !statusEntry.completed
+              : runInProgress && modelIsInActiveRun;
+            const durationMs = typeof completedElapsedMs === "number"
+              ? completedElapsedMs
+              : entryInProgress
               ? Math.max(statusElapsedMs ?? 0, liveElapsedMs ?? 0)
               : statusElapsedMs ?? persistedMeta?.responseTimeMs;
             const durationText = formatElapsedSeconds(durationMs);
@@ -706,12 +838,22 @@ export default function RunPage() {
               typeof statusEntry?.generated_tokens === "number"
                 ? false
                 : persistedMeta?.generatedTokensEstimated ?? true;
-            const eventLabel = statusEntry?.event ?? (runInProgress ? "generating" : persistedMeta?.eventLabel ?? "idle");
+            const eventLabel = statusEntry?.event ?? (runInProgress && modelIsInActiveRun ? "generating" : persistedMeta?.eventLabel ?? "idle");
+            const evaluationLabel = persistedMeta?.evaluationLabel ?? (responseText.trim() ? "Pending" : "-");
+            const evaluationMethodLabel = persistedMeta?.evaluationMethodLabel ?? (responseText.trim() ? "Pending" : "-");
 
             return (
             <article key={model} className="rounded-ui border border-border bg-white p-3">
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold">{model}</h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-semibold">{model}</h3>
+                  <span className="rounded-full border border-border bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
+                    Evaluation: {evaluationLabel}
+                  </span>
+                  <span className="rounded-full border border-border bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
+                    Evaluation Method: {evaluationMethodLabel}
+                  </span>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <button className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs" onClick={() => void handleManual(model, "success")}>
                     Mark Successful

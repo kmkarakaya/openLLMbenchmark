@@ -219,7 +219,7 @@ export default function ConfigurePage() {
           <p className="font-medium">Resolved model set</p>
           <p className="mt-1 text-muted">{activeModels.join(", ") || "No model selected yet."}</p>
         </div>
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex justify-center">
           <button
             type="button"
             className="focus-ring rounded-ui bg-primary px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"

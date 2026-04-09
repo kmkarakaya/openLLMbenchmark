@@ -57,6 +57,19 @@ _PERSISTED_RUN_ENTRY_KEYS: set[str] = set()
 _PERSISTED_RUN_ENTRY_KEYS_LOCK = threading.Lock()
 
 
+def _evaluation_label(status: str) -> str:
+    normalized_status = str(status or "").strip()
+    return {
+        "success": "Successful",
+        "fail": "Fail",
+        "manual_review": "Needs Review",
+    }.get(normalized_status, normalized_status or "Unknown")
+
+
+def _evaluation_method_label(auto_scored: Any) -> str:
+    return "Automatic" if bool(auto_scored) else "Manual"
+
+
 def _normalized_result_row(record: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(record)
     model_ref = model_ref_from_record(normalized)
@@ -85,6 +98,8 @@ def _normalized_result_row(record: dict[str, Any]) -> dict[str, Any]:
     normalized["generated_tokens"] = generated_tokens
     if prompt_tokens is not None:
         normalized["prompt_tokens"] = prompt_tokens
+    normalized["evaluation"] = _evaluation_label(str(normalized.get("status", "") or ""))
+    normalized["evaluation_method"] = _evaluation_method_label(normalized.get("auto_scored"))
     return normalized
 
 
@@ -221,6 +236,8 @@ def _persist_completed_run_entries(snapshot: dict[str, Any]) -> None:
                 "interrupted": bool(entry.get("interrupted")),
                 "auto_scored": bool(verdict.get("auto_scored")),
                 "reason": normalize_reason_text(str(verdict.get("reason", "") or "")),
+                "evaluation": _evaluation_label(str(verdict["status"])),
+                "evaluation_method": _evaluation_method_label(verdict.get("auto_scored")),
                 "run_id": run_id,
                 "session_id": session_id,
             }
@@ -540,6 +557,8 @@ def apply_manual_result_override(
         updated["interrupted"] = False
         updated["reason"] = normalize_reason_text(reason.strip() or selected["reason"])
         updated["timestamp"] = datetime.now(timezone.utc).isoformat()
+        updated["evaluation"] = _evaluation_label(status)
+        updated["evaluation_method"] = _evaluation_method_label(False)
         if not str(updated.get("question_prompt_hash", "")).strip():
             prompt = next(
                 (

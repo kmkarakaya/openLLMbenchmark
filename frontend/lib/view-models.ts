@@ -30,6 +30,27 @@ export type UiCategoryPerformanceRow = {
   accuracies: Record<string, number | null>;
 };
 
+export function evaluationLabelFromRecord(record: Record<string, unknown>): string {
+  const explicit = String(record.evaluation ?? "").trim();
+  if (explicit) {
+    return explicit;
+  }
+  const status = String(record.status ?? "").trim();
+  return {
+    success: "Successful",
+    fail: "Fail",
+    manual_review: "Needs Review"
+  }[status] ?? (status || "Unknown");
+}
+
+export function evaluationMethodLabelFromRecord(record: Record<string, unknown>): string {
+  const explicit = String(record.evaluation_method ?? "").trim();
+  if (explicit) {
+    return explicit;
+  }
+  return record.auto_scored === true ? "Automatic" : "Manual";
+}
+
 export function resolveActiveModels(config: BenchmarkConfig): string[] {
   const model1 = (config.model1 || "").trim();
   const model2 = (config.model2 || "").trim();
