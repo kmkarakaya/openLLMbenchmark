@@ -192,7 +192,7 @@ function neutralBadgeClassName(): string {
 }
 
 export default function RunPage() {
-  const { sessionId, config, setConfig, addRunHistory, updateRunHistory } = useAppState();
+  const { sessionId, config, setConfig, ollamaApiKey, addRunHistory, updateRunHistory } = useAppState();
   const { pushToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -476,7 +476,7 @@ export default function RunPage() {
         question_id: activeQuestion.id,
         models: modelsToRun,
         system_prompt: config.systemPrompt
-      });
+      }, ollamaApiKey);
       setRunStartedAtMs(Date.now());
       setCompletedEntryElapsedMs({});
       setActiveRunModels(modelsToRun);

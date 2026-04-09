@@ -19,6 +19,7 @@ from api_service import (
     get_datasets,
     get_dataset_template,
     get_health,
+    get_ollama_auth_status,
     get_models,
     get_questions,
     get_results,
@@ -40,6 +41,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+OLLAMA_API_KEY_HEADER = "X-Ollama-API-Key"
+
 
 def _is_local_request(request: Request) -> bool:
     client = request.client
@@ -57,6 +60,10 @@ def _raise_if_runs_circuit_open() -> None:
                 "Investigate and recover before retrying."
             ),
         )
+
+
+def _ollama_api_key_from_request(request: Request) -> str:
+    return str(request.headers.get(OLLAMA_API_KEY_HEADER, "") or "").strip()
 
 
 def _record_terminal_run_outcome(
@@ -82,11 +89,16 @@ def health() -> dict[str, str]:
 
 
 @app.get("/models")
-def models() -> dict[str, list[str]]:
+def models(request: Request) -> dict[str, list[str]]:
     try:
-        return {"models": get_models()}
+        return {"models": get_models(ollama_api_key=_ollama_api_key_from_request(request))}
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+@app.get("/ollama/auth-status")
+def ollama_auth_status() -> dict[str, bool]:
+    return get_ollama_auth_status()
 
 
 @app.get("/datasets")
@@ -210,11 +222,17 @@ async def runs(request: Request) -> dict[str, object]:
         question_id=question_id,
         models=models,
         system_prompt=system_prompt,
+        ollama_api_key=_ollama_api_key_from_request(request),
     )
     if status_text == "dataset_not_found" or status_text == "question_not_found":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=status_text)
     if status_text == "invalid_models":
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=status_text)
+    if status_text == "missing_api_key":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Enter Ollama API Key to be able to use Ollama Cloud models.",
+        )
     if status_text == "conflict":
         payload: dict[str, object] = {"detail": "A run is already active for this session."}
         if run_id is not None:

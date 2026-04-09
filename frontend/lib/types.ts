@@ -6,6 +6,10 @@ export type DatasetOption = {
   question_count: number;
 };
 
+export type OllamaAuthStatus = {
+  server_api_key_configured: boolean;
+};
+
 export type BenchmarkQuestion = {
   id: string;
   prompt: string;

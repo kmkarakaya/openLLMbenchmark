@@ -50,12 +50,12 @@ def _optional_int(value: Any) -> int | None:
     return None
 
 
-def get_cloud_client() -> Client:
-    api_key = os.getenv("OLLAMA_API_KEY", "").strip()
-    if not api_key:
-        raise RuntimeError("OLLAMA_API_KEY is not set.")
+def get_cloud_client(api_key: str | None = None) -> Client:
+    resolved_api_key = str(api_key or "").strip() or os.getenv("OLLAMA_API_KEY", "").strip()
+    if not resolved_api_key:
+        raise RuntimeError("OLLAMA_API_KEY is not set. Enter Ollama API Key to use Ollama Cloud models.")
     host = resolve_model_host(CLOUD_SOURCE, cloud_host=os.getenv("OLLAMA_HOST", ""))
-    return Client(host=host, headers={"Authorization": f"Bearer {api_key}"})
+    return Client(host=host, headers={"Authorization": f"Bearer {resolved_api_key}"})
 
 
 def get_local_client(host: str | None = None) -> Client:
@@ -63,16 +63,16 @@ def get_local_client(host: str | None = None) -> Client:
     return Client(host=resolved_host)
 
 
-def get_client_for_source(source: str, host: str | None = None) -> Client:
+def get_client_for_source(source: str, host: str | None = None, api_key: str | None = None) -> Client:
     normalized_source = normalize_model_source(source)
     if normalized_source == LOCAL_SOURCE:
         return get_local_client(host)
-    return get_cloud_client()
+    return get_cloud_client(api_key=api_key)
 
 
-def get_client() -> Client:
+def get_client(api_key: str | None = None) -> Client:
     # Backward-compatible alias for call sites that still use cloud-only path.
-    return get_cloud_client()
+    return get_cloud_client(api_key=api_key)
 
 
 def list_models(client: Client, *, source: str = CLOUD_SOURCE) -> list[str]:

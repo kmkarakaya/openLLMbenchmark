@@ -3,6 +3,7 @@ import type {
   DeleteModelResultsResponse,
   DatasetOption,
   DatasetTemplateRow,
+  OllamaAuthStatus,
   ResultsTableKey,
   ResultsResponse,
   RunStartResponse,
@@ -11,6 +12,7 @@ import type {
 } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
+const OLLAMA_API_KEY_HEADER = "X-Ollama-API-Key";
 
 export class ApiError extends Error {
   status: number;
@@ -54,13 +56,28 @@ export function datasetTemplateUrl(): string {
   return `${API_BASE_URL}/datasets/template`;
 }
 
+function buildHeaders(contentType?: string, ollamaApiKey?: string): HeadersInit {
+  const headers: Record<string, string> = {};
+  if (contentType) {
+    headers["Content-Type"] = contentType;
+  }
+  if (typeof ollamaApiKey === "string" && ollamaApiKey.trim()) {
+    headers[OLLAMA_API_KEY_HEADER] = ollamaApiKey.trim();
+  }
+  return headers;
+}
+
 export async function getHealth(): Promise<{ status: string; version: string }> {
   return parseResponse(await fetch(`${API_BASE_URL}/health`, { cache: "no-store" }));
 }
 
-export async function getModels(): Promise<string[]> {
+export async function getOllamaAuthStatus(): Promise<OllamaAuthStatus> {
+  return parseResponse(await fetch(`${API_BASE_URL}/ollama/auth-status`, { cache: "no-store" }));
+}
+
+export async function getModels(ollamaApiKey?: string): Promise<string[]> {
   const payload = await parseResponse<{ models: string[] }>(
-    await fetch(`${API_BASE_URL}/models`, { cache: "no-store" })
+    await fetch(`${API_BASE_URL}/models`, { cache: "no-store", headers: buildHeaders(undefined, ollamaApiKey) })
   );
   return payload.models;
 }
@@ -93,11 +110,11 @@ export async function startRun(payload: {
   question_id: string;
   models: string[];
   system_prompt?: string;
-}): Promise<RunStartResponse> {
+}, ollamaApiKey?: string): Promise<RunStartResponse> {
   return parseResponse(
     await fetch(`${API_BASE_URL}/runs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: buildHeaders("application/json", ollamaApiKey),
       body: JSON.stringify(payload)
     })
   );

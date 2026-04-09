@@ -61,6 +61,7 @@ class LiveRunner:
         session_id: str = "",
         dataset_key: str = "",
         trace_id: str = "",
+        ollama_api_key: str = "",
     ) -> bool:
         normalized_targets: list[dict[str, str]] = []
         seen_refs: set[str] = set()
@@ -119,7 +120,7 @@ class LiveRunner:
         for target in normalized_targets:
             thread = threading.Thread(
                 target=self._run_worker,
-                args=(run_id, target, prompt, system_prompt),
+                args=(run_id, target, prompt, system_prompt, ollama_api_key),
                 daemon=True,
             )
             self.state.threads.append(thread)
@@ -147,7 +148,7 @@ class LiveRunner:
             self.state.running = any(item.running for item in entries)
             self.state.completed = bool(entries) and all(item.completed for item in entries)
 
-    def _run_worker(self, run_id: int, target: dict[str, str], prompt: str, system_prompt: str) -> None:
+    def _run_worker(self, run_id: int, target: dict[str, str], prompt: str, system_prompt: str, ollama_api_key: str = "") -> None:
         model_ref = target["ref"]
         model_name = target["model"]
         source = target["source"]
@@ -156,7 +157,7 @@ class LiveRunner:
         error = ""
         chunks: list[str] = []
         try:
-            client = get_client_for_source(source=source, host=host)
+            client = get_client_for_source(source=source, host=host, api_key=ollama_api_key)
             for event in stream_chat_events(client=client, model=model_name, prompt=prompt, system_prompt=system_prompt):
                 if self.state.stop_event.is_set():
                     interrupted = True

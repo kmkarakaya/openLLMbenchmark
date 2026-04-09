@@ -36,9 +36,64 @@ def test_health_returns_v1_schema_lock() -> None:
 def test_read_endpoints_are_available() -> None:
     client = TestClient(app)
     assert client.get("/models").status_code in {200, 503}
+    assert client.get("/ollama/auth-status").status_code == 200
     assert client.get("/datasets").status_code == 200
     assert client.get("/questions", params={"dataset_key": "default_tr"}).status_code == 200
     assert client.get("/results", params={"dataset_key": "default_tr"}).status_code == 200
+
+
+def test_ollama_auth_status_reports_env_key_presence(monkeypatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setenv("OLLAMA_API_KEY", "env-key")
+
+    response = client.get("/ollama/auth-status")
+
+    assert response.status_code == 200
+    assert response.json() == {"server_api_key_configured": True}
+
+
+def test_models_endpoint_passes_request_scoped_api_key_header(monkeypatch) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_get_models(*, ollama_api_key: str = "") -> list[str]:
+        captured["api_key"] = ollama_api_key
+        return ["gemma3:4b:cloud"]
+
+    monkeypatch.setattr("api.get_models", fake_get_models)
+    client = TestClient(app)
+
+    response = client.get("/models", headers={"X-Ollama-API-Key": "session-key"})
+
+    assert response.status_code == 200
+    assert response.json() == {"models": ["gemma3:4b:cloud"]}
+    assert captured["api_key"] == "session-key"
+
+
+def test_runs_endpoint_passes_request_scoped_api_key_header(monkeypatch) -> None:
+    captured: dict[str, str] = {}
+
+    def fake_start_run(**kwargs):  # type: ignore[no-untyped-def]
+        captured["api_key"] = kwargs["ollama_api_key"]
+        return 23, "started"
+
+    monkeypatch.setattr("api.start_run", fake_start_run)
+    client = TestClient(app)
+
+    response = client.post(
+        "/runs",
+        headers={"X-Ollama-API-Key": "session-key"},
+        json={
+            "session_id": "s1",
+            "dataset_key": "default_tr",
+            "question_id": "q001",
+            "models": ["gemma3:4b:cloud"],
+            "system_prompt": "x",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["run_id"] == 23
+    assert captured["api_key"] == "session-key"
 
 
 def test_results_endpoint_uses_baseline_compatible_payload_shape(monkeypatch) -> None:
@@ -793,7 +848,7 @@ def test_get_models_preserves_explicit_cloud_suffix_from_local_provider(monkeypa
     cloud_client = object()
     local_client = object()
 
-    monkeypatch.setattr("engine.get_cloud_client", lambda: cloud_client)
+    monkeypatch.setattr("engine.get_cloud_client", lambda api_key=None: cloud_client)
     monkeypatch.setattr("engine.get_local_client", lambda: local_client)
 
     def fake_list_models(client, source="cloud"):  # type: ignore[no-untyped-def]

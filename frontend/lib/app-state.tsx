@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 export type BenchmarkMode = "single" | "pair";
@@ -26,10 +26,16 @@ type AppStateValue = {
   sessionId: string;
   config: BenchmarkConfig;
   setConfig: (patch: Partial<BenchmarkConfig>) => void;
+  ollamaApiKey: string;
+  ollamaApiKeyHydrated: boolean;
+  setOllamaApiKey: (value: string) => void;
+  clearOllamaApiKey: () => void;
   runHistory: RunHistoryItem[];
   addRunHistory: (entry: RunHistoryItem) => void;
   updateRunHistory: (runId: number, status: RunHistoryItem["status"]) => void;
 };
+
+const OLLAMA_API_KEY_SESSION_STORAGE_KEY = "openllmbenchmark.ollamaApiKey";
 
 const DEFAULT_CONFIG: BenchmarkConfig = {
   datasetKey: "default_tr",
@@ -50,10 +56,39 @@ function newSessionId(): string {
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [sessionId] = useState<string>(newSessionId);
   const [config, setConfigState] = useState<BenchmarkConfig>(DEFAULT_CONFIG);
+  const [ollamaApiKey, setOllamaApiKeyState] = useState("");
+  const [ollamaApiKeyHydrated, setOllamaApiKeyHydrated] = useState(false);
   const [runHistory, setRunHistory] = useState<RunHistoryItem[]>([]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    setOllamaApiKeyState(window.sessionStorage.getItem(OLLAMA_API_KEY_SESSION_STORAGE_KEY) ?? "");
+    setOllamaApiKeyHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!ollamaApiKeyHydrated || typeof window === "undefined") {
+      return;
+    }
+    if (ollamaApiKey.trim()) {
+      window.sessionStorage.setItem(OLLAMA_API_KEY_SESSION_STORAGE_KEY, ollamaApiKey.trim());
+      return;
+    }
+    window.sessionStorage.removeItem(OLLAMA_API_KEY_SESSION_STORAGE_KEY);
+  }, [ollamaApiKey, ollamaApiKeyHydrated]);
 
   const setConfig = (patch: Partial<BenchmarkConfig>) => {
     setConfigState((prev) => ({ ...prev, ...patch }));
+  };
+
+  const setOllamaApiKey = (value: string) => {
+    setOllamaApiKeyState(value.trim());
+  };
+
+  const clearOllamaApiKey = () => {
+    setOllamaApiKeyState("");
   };
 
   const addRunHistory = (entry: RunHistoryItem) => {
@@ -76,11 +111,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       sessionId,
       config,
       setConfig,
+      ollamaApiKey,
+      ollamaApiKeyHydrated,
+      setOllamaApiKey,
+      clearOllamaApiKey,
       runHistory,
       addRunHistory,
       updateRunHistory
     }),
-    [sessionId, config, runHistory]
+    [sessionId, config, ollamaApiKey, ollamaApiKeyHydrated, runHistory]
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

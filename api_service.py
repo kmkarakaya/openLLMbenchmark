@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 import threading
@@ -276,14 +277,19 @@ def get_health() -> dict[str, str]:
     return {"status": "ok", "version": "v1"}
 
 
-def get_models() -> list[str]:
+def get_ollama_auth_status() -> dict[str, bool]:
+    return {"server_api_key_configured": bool(os.getenv("OLLAMA_API_KEY", "").strip())}
+
+
+def get_models(*, ollama_api_key: str = "") -> list[str]:
     from engine import get_cloud_client, get_local_client, list_models
 
     model_refs: set[str] = set()
     cloud_error: Exception | None = None
+    explicit_cloud_key_supplied = bool(str(ollama_api_key or "").strip())
 
     try:
-        cloud_client = get_cloud_client()
+        cloud_client = get_cloud_client(api_key=ollama_api_key)
         for model in list_models(cloud_client, source=CLOUD_SOURCE):
             model_ref = to_model_ref(model, CLOUD_SOURCE)
             if model_ref:
@@ -301,6 +307,8 @@ def get_models() -> list[str]:
         # Local model discovery is best-effort and should not block cloud usage.
         pass
 
+    if explicit_cloud_key_supplied and cloud_error is not None:
+        raise RuntimeError(str(cloud_error))
     if model_refs:
         return sorted(model_refs)
     if cloud_error is not None:
@@ -576,7 +584,15 @@ def apply_manual_result_override(
     return "updated", updated
 
 
-def start_run(*, session_id: str, dataset_key: str, question_id: str, models: list[str], system_prompt: str) -> tuple[int | None, str]:
+def start_run(
+    *,
+    session_id: str,
+    dataset_key: str,
+    question_id: str,
+    models: list[str],
+    system_prompt: str,
+    ollama_api_key: str = "",
+) -> tuple[int | None, str]:
     dataset = _dataset_option_map().get(dataset_key)
     if dataset is None:
         return None, "dataset_not_found"
@@ -586,6 +602,14 @@ def start_run(*, session_id: str, dataset_key: str, question_id: str, models: li
     normalized_models = normalize_selected_models(*models)
     if not normalized_models:
         return None, "invalid_models"
+    requires_cloud_access = any(split_model_ref(model_ref)[1] == CLOUD_SOURCE for model_ref in normalized_models)
+    if requires_cloud_access:
+        from engine import get_cloud_client
+
+        try:
+            get_cloud_client(api_key=ollama_api_key)
+        except RuntimeError:
+            return None, "missing_api_key"
     runner = get_runner(session_id)
     started = runner.start(
         models=normalized_models,
@@ -595,6 +619,7 @@ def start_run(*, session_id: str, dataset_key: str, question_id: str, models: li
         session_id=session_id,
         dataset_key=dataset_key,
         trace_id=uuid.uuid4().hex,
+        ollama_api_key=ollama_api_key,
     )
     if not started:
         snapshot = runner.snapshot()

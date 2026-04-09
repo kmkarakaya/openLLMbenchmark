@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+const API_HOST_DIRECT = "http://(localhost|127\\.0\\.0\\.1):(8000|18000)";
+const API_HOST_PROXY = "http://(localhost|127\\.0\\.0\\.1):3011/api";
+const API_HOST = `(?:${API_HOST_DIRECT}|${API_HOST_PROXY})`;
+
 async function mockBaseApi(page: import("@playwright/test").Page) {
-  const API_HOST_DIRECT = "http://(localhost|127\\.0\\.0\\.1):(8000|18000)";
-  const API_HOST_PROXY = "http://(localhost|127\\.0\\.0\\.1):3011/api";
-  const API_HOST = `(?:${API_HOST_DIRECT}|${API_HOST_PROXY})`;
   let resultsPayload = {
     dataset_key: "default_tr",
     results: [
@@ -70,6 +71,9 @@ async function mockBaseApi(page: import("@playwright/test").Page) {
         ]
       }
     });
+  });
+  await page.route(new RegExp(`${API_HOST}/ollama/auth-status$`), async (route) => {
+    await route.fulfill({ json: { server_api_key_configured: true } });
   });
   await page.route(new RegExp(`${API_HOST}/models$`), async (route) => {
     await route.fulfill({ json: { models: ["gemma3:4b", "qwen3:8b"] } });
@@ -218,12 +222,38 @@ test("configure page is strict setup-only", async ({ page }) => {
   await expect(page.getByTestId("configure-mode")).toBeVisible();
   await expect(page.getByText("Primary Model", { exact: true })).toBeVisible();
   await expect(page.getByText("Secondary Model", { exact: true })).toBeVisible();
+  await expect(page.getByText("Ollama Cloud Access", { exact: true })).toBeVisible();
   await expect(page.getByTestId("configure-system-prompt")).toBeVisible();
 
   await expect(page.getByText("Question Preview")).toHaveCount(0);
   await expect(page.getByText("Run Simulation")).toHaveCount(0);
   await expect(page.getByText("Review Results Layout")).toHaveCount(0);
   await expect(page.getByText("Run state")).toHaveCount(0);
+});
+
+test("configure page lets user enter session Ollama key when server key is missing", async ({ page }) => {
+  await mockBaseApi(page);
+
+  await page.route(new RegExp(`${API_HOST}/ollama/auth-status$`), async (route) => {
+    await route.fulfill({ json: { server_api_key_configured: false } });
+  });
+  await page.route(new RegExp(`${API_HOST}/models$`), async (route) => {
+    const sessionKey = route.request().headers()["x-ollama-api-key"] ?? "";
+    if (!sessionKey) {
+      await route.fulfill({ status: 503, json: { detail: "Enter Ollama API Key to be able to use Ollama Cloud models." } });
+      return;
+    }
+    await route.fulfill({ json: { models: ["gemma3:4b:cloud", "llama3.2:local"] } });
+  });
+
+  await page.goto("/configure");
+
+  await expect(page.getByText("Enter Ollama API Key to be able to use Ollama Cloud models.")).toBeVisible();
+  await page.getByTestId("configure-ollama-api-key-input").fill("session-key");
+  await page.getByTestId("configure-ollama-api-key-save").click();
+
+  await expect(page.getByTestId("configure-ollama-session-key")).toHaveValue("******");
+  await expect(page.locator("label:has-text('Primary Model') select option[value='gemma3:4b:cloud']")).toHaveCount(1);
 });
 
 test("responsive smoke on desktop and mobile", async ({ page }) => {

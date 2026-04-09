@@ -85,6 +85,19 @@ def test_get_cloud_client_requires_api_key(monkeypatch) -> None:
         get_cloud_client()
 
 
+def test_get_cloud_client_accepts_explicit_api_key(monkeypatch) -> None:
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+    captured: dict[str, object] = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+
+    monkeypatch.setattr("engine.Client", _FakeClient)
+    get_cloud_client(api_key="session-key")
+    assert captured["headers"] == {"Authorization": "Bearer session-key"}
+
+
 def test_get_local_client_uses_default_host_without_auth(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

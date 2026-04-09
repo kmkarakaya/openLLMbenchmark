@@ -17,7 +17,7 @@ def wait_until_completed(live_runner: LiveRunner, timeout: float = 2.0) -> dict[
 
 
 def test_runner_collects_two_model_responses(monkeypatch) -> None:
-    monkeypatch.setattr("runner.get_client_for_source", lambda source, host=None: object())
+    monkeypatch.setattr("runner.get_client_for_source", lambda source, host=None, api_key=None: object())
     response_parts = {
         "gemma3:4b": ["Mer", "haba"],
         "qwen3:8b": ["Dün", "ya"],
@@ -69,7 +69,7 @@ def test_runner_collects_two_model_responses(monkeypatch) -> None:
 
 
 def test_runner_stop_interrupts_all_models(monkeypatch) -> None:
-    monkeypatch.setattr("runner.get_client_for_source", lambda source, host=None: object())
+    monkeypatch.setattr("runner.get_client_for_source", lambda source, host=None, api_key=None: object())
 
     def slow_stream_chat_events(*, client, model, prompt, system_prompt):  # type: ignore[no-untyped-def]
         del client, model, prompt, system_prompt
@@ -106,7 +106,7 @@ def test_runner_stop_interrupts_all_models(monkeypatch) -> None:
 
 
 def test_runner_distinguishes_same_model_across_sources(monkeypatch) -> None:
-    monkeypatch.setattr("runner.get_client_for_source", lambda source, host=None: object())
+    monkeypatch.setattr("runner.get_client_for_source", lambda source, host=None, api_key=None: object())
 
     def fake_stream_chat_events(*, client, model, prompt, system_prompt):  # type: ignore[no-untyped-def]
         del client, prompt, system_prompt
@@ -134,3 +134,34 @@ def test_runner_distinguishes_same_model_across_sources(monkeypatch) -> None:
     assert entries["gemma3:4b:cloud"]["source"] == "cloud"
     assert entries["gemma3:4b:local"]["source"] == "local"
     assert entries["gemma3:4b:cloud"]["generated_tokens"] == 1
+
+
+def test_runner_passes_request_scoped_api_key_to_cloud_client(monkeypatch) -> None:
+    captured: list[tuple[str, str | None, str | None]] = []
+
+    def fake_get_client_for_source(source, host=None, api_key=None):  # type: ignore[no-untyped-def]
+        captured.append((source, host, api_key))
+        return object()
+
+    def fake_stream_chat_events(*, client, model, prompt, system_prompt):  # type: ignore[no-untyped-def]
+        del client, model, prompt, system_prompt
+        yield ChatStreamEvent(done=True, generated_tokens=1, prompt_tokens=1)
+
+    monkeypatch.setattr("runner.get_client_for_source", fake_get_client_for_source)
+    monkeypatch.setattr("runner.stream_chat_events", fake_stream_chat_events)
+
+    live_runner = LiveRunner()
+    started = live_runner.start(
+        models=["gemma3:4b:cloud"],
+        question_id="q001",
+        prompt="Prompt?",
+        system_prompt="",
+        session_id="session-d",
+        dataset_key="default_tr",
+        trace_id="trace-abc",
+        ollama_api_key="session-key",
+    )
+
+    assert started is True
+    wait_until_completed(live_runner)
+    assert captured == [("cloud", "https://ollama.com", "session-key")]

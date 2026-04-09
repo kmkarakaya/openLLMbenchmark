@@ -658,7 +658,7 @@ export default function ResultsPage() {
                 return typeof value === "number" ? `${value.toFixed(1)}%` : "-";
               },
               sortValue: (row: (typeof categoryPerformanceTransposed.rows)[number]) => row.values[group.key] ?? null,
-              defaultSortDirection: "desc"
+              defaultSortDirection: "desc" as const
             }))
           ]}
         />
@@ -686,7 +686,7 @@ export default function ResultsPage() {
                 return typeof value === "number" ? `${value.toFixed(1)}%` : "-";
               },
               sortValue: (row: (typeof hardnessPerformanceTransposed.rows)[number]) => row.values[group.key] ?? null,
-              defaultSortDirection: "desc"
+              defaultSortDirection: "desc" as const
             }))
           ]}
         />
