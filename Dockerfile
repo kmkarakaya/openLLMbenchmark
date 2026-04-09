@@ -7,6 +7,7 @@ RUN npm ci
 COPY frontend/ ./
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 RUN npm run build
+RUN npm prune --omit=dev
 
 FROM python:3.11-slim
 
@@ -28,7 +29,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . .
 
 WORKDIR /app/frontend
-RUN npm ci --omit=dev
+COPY --from=frontend-builder /build/frontend/node_modules /app/frontend/node_modules
 COPY --from=frontend-builder /build/frontend/.next /app/frontend/.next
 
 WORKDIR /app
