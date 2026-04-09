@@ -90,9 +90,26 @@ export default function ResultsPage() {
   const matrixRows = useMemo(() => mapMatrix(results), [results]);
   const responseRows = useMemo(() => {
     const rows = [...(results?.results ?? [])];
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
     rows.sort((left, right) => {
       const leftRecord = left as Record<string, unknown>;
       const rightRecord = right as Record<string, unknown>;
+      const questionCompare = collator.compare(
+        String(leftRecord.question_id ?? ""),
+        String(rightRecord.question_id ?? "")
+      );
+      if (questionCompare !== 0) {
+        return questionCompare;
+      }
+
+      const modelCompare = collator.compare(
+        String(leftRecord.model ?? ""),
+        String(rightRecord.model ?? "")
+      );
+      if (modelCompare !== 0) {
+        return modelCompare;
+      }
+
       const leftTimestamp = Date.parse(String(leftRecord.timestamp ?? ""));
       const rightTimestamp = Date.parse(String(rightRecord.timestamp ?? ""));
       const leftSortable = Number.isFinite(leftTimestamp) ? leftTimestamp : Number.NEGATIVE_INFINITY;
@@ -100,11 +117,11 @@ export default function ResultsPage() {
       if (leftSortable !== rightSortable) {
         return rightSortable - leftSortable;
       }
-      const modelCompare = String(rightRecord.model ?? "").localeCompare(String(leftRecord.model ?? ""));
-      if (modelCompare !== 0) {
-        return modelCompare;
-      }
-      return String(rightRecord.question_id ?? "").localeCompare(String(leftRecord.question_id ?? ""));
+
+      return collator.compare(
+        String(leftRecord.response ?? ""),
+        String(rightRecord.response ?? "")
+      );
     });
     return rows;
   }, [results]);
@@ -529,37 +546,49 @@ export default function ResultsPage() {
                 key: "model",
                 header: "Model",
                 headerHelp: "Evaluated Ollama model name. This column is not a higher/lower-is-better metric.",
-                render: (row) => row.model
+                render: (row) => row.model,
+                sortValue: (row) => row.model,
+                defaultSortDirection: "asc"
               },
               {
                 key: "accuracy",
                 header: "Accuracy %",
                 headerHelp: "(Successful answers / scored questions) x 100. Higher is better.",
-                render: (row) => row.accuracyPercent.toFixed(1)
+                render: (row) => row.accuracyPercent.toFixed(1),
+                sortValue: (row) => row.accuracyPercent,
+                defaultSortDirection: "desc"
               },
               {
                 key: "speed",
                 header: "Speed Score",
                 headerHelp: "Speed score normalized by the fastest model median (0-100). Higher is better.",
-                render: (row) => row.latencyScore.toFixed(1)
+                render: (row) => row.latencyScore.toFixed(1),
+                sortValue: (row) => row.latencyScore,
+                defaultSortDirection: "desc"
               },
               {
                 key: "success",
                 header: "Success vs Tested",
                 headerHelp: "Successful answers / total scored questions. This column is not a higher/lower-is-better metric.",
-                render: (row) => row.successOverScored
+                render: (row) => row.successOverScored,
+                sortValue: (row) => row.accuracyPercent,
+                defaultSortDirection: "desc"
               },
               {
                 key: "avgTokens",
                 header: "Avg Tokens",
                 headerHelp: "Average generated response tokens across non-interrupted saved responses for this model.",
-                render: (row) => row.averageGeneratedTokens?.toFixed(1) ?? "-"
+                render: (row) => row.averageGeneratedTokens?.toFixed(1) ?? "-",
+                sortValue: (row) => row.averageGeneratedTokens ?? null,
+                defaultSortDirection: "desc"
               },
               {
                 key: "median",
                 header: "Median (s)",
                 headerHelp: "Median response time in seconds. Lower is better.",
-                render: (row) => row.medianSeconds?.toFixed(2) ?? "-"
+                render: (row) => row.medianSeconds?.toFixed(2) ?? "-",
+                sortValue: (row) => row.medianSeconds ?? null,
+                defaultSortDirection: "desc"
               }
             ]}
           />
@@ -616,7 +645,9 @@ export default function ResultsPage() {
               key: "model",
               header: "Model",
               headerHelp: "Model identifier; each row shows per-category accuracy for that model.",
-              render: (row) => row.model
+              render: (row) => row.model,
+              sortValue: (row) => row.model,
+              defaultSortDirection: "asc"
             },
             ...categoryPerformanceTransposed.groups.map((group) => ({
               key: group.key,
@@ -625,7 +656,9 @@ export default function ResultsPage() {
               render: (row: (typeof categoryPerformanceTransposed.rows)[number]) => {
                 const value = row.values[group.key];
                 return typeof value === "number" ? `${value.toFixed(1)}%` : "-";
-              }
+              },
+              sortValue: (row: (typeof categoryPerformanceTransposed.rows)[number]) => row.values[group.key] ?? null,
+              defaultSortDirection: "desc"
             }))
           ]}
         />
@@ -640,7 +673,9 @@ export default function ResultsPage() {
               key: "model",
               header: "Model",
               headerHelp: "Model identifier; each row shows per-hardness accuracy for that model.",
-              render: (row) => row.model
+              render: (row) => row.model,
+              sortValue: (row) => row.model,
+              defaultSortDirection: "asc"
             },
             ...hardnessPerformanceTransposed.groups.map((group) => ({
               key: group.key,
@@ -649,7 +684,9 @@ export default function ResultsPage() {
               render: (row: (typeof hardnessPerformanceTransposed.rows)[number]) => {
                 const value = row.values[group.key];
                 return typeof value === "number" ? `${value.toFixed(1)}%` : "-";
-              }
+              },
+              sortValue: (row: (typeof hardnessPerformanceTransposed.rows)[number]) => row.values[group.key] ?? null,
+              defaultSortDirection: "desc"
             }))
           ]}
         />

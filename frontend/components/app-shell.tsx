@@ -115,7 +115,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="mb-6 flex items-start justify-between gap-2">
             <div>
               <h1 className="text-xl font-semibold text-white">Open LLM Benchmark</h1>
-              <p className="mt-1 text-xs text-slate-200">Enterprise Operator UI</p>
+              <p className="mt-1 text-xs text-slate-200">by Murat Karakaya Akademi</p>
             </div>
             <button
               className="focus-ring rounded-ui border border-white/30 px-2 py-1 text-xs font-medium text-white hover:bg-white/10 lg:hidden"

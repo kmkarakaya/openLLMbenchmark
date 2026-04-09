@@ -144,6 +144,53 @@ function buildSavedResultMeta(savedResult: Record<string, unknown>): SavedResult
   };
 }
 
+function statusBadgeClassName(label: string): string {
+  const normalized = label.trim().toLowerCase();
+
+  if (!normalized || normalized === "-" || normalized === "idle") {
+    return "rounded-full border border-border bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700";
+  }
+
+  if (
+    normalized === "completed" ||
+    normalized === "success" ||
+    normalized === "successful" ||
+    normalized === "entry_completed"
+  ) {
+    return "rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-xs font-medium text-success";
+  }
+
+  if (normalized === "fail" || normalized === "failed" || normalized === "error" || normalized === "run_error") {
+    return "rounded-full border border-danger/25 bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger";
+  }
+
+  if (
+    normalized === "pending" ||
+    normalized === "interrupted" ||
+    normalized === "run_interrupted" ||
+    normalized === "manual_review" ||
+    normalized === "needs review"
+  ) {
+    return "rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning";
+  }
+
+  if (
+    normalized === "response being generated" ||
+    normalized === "running" ||
+    normalized === "run_started" ||
+    normalized === "generating" ||
+    normalized === "chunk"
+  ) {
+    return "rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-xs font-medium text-primary";
+  }
+
+  return "rounded-full border border-border bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700";
+}
+
+function neutralBadgeClassName(): string {
+  return "rounded-full border border-border bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700";
+}
+
 export default function RunPage() {
   const { sessionId, config, setConfig, addRunHistory, updateRunHistory } = useAppState();
   const { pushToast } = useToast();
@@ -163,9 +210,12 @@ export default function RunPage() {
   const [completedEntryElapsedMs, setCompletedEntryElapsedMs] = useState<Record<string, number>>({});
   const [activeRunModels, setActiveRunModels] = useState<string[]>([]);
   const [savedResponsesStatus, setSavedResponsesStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [savedResponsesReloadToken, setSavedResponsesReloadToken] = useState(0);
   const [pendingAutoStartKey, setPendingAutoStartKey] = useState<string>("");
   const [inlineBanner, setInlineBanner] = useState<{ tone: "info" | "warning" | "danger" | "success"; title: string; message: string } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const terminalSavedResponsesRefreshKeyRef = useRef("");
+  const completedEntryRefreshKeysRef = useRef(new Set<string>());
 
   const rememberCompletedElapsedMs = (model: string, elapsedMs: number) => {
     if (!model || !Number.isFinite(elapsedMs) || elapsedMs < 0) {
@@ -177,6 +227,24 @@ export default function RunPage() {
       }
       return { ...prev, [model]: elapsedMs };
     });
+  };
+
+  const requestSavedResponsesRefresh = () => {
+    setSavedResponsesStatus("loading");
+    setSavedResponsesReloadToken((prev) => prev + 1);
+  };
+
+  const requestCompletedEntryRefresh = (completedRunId: number, model: string) => {
+    const normalizedModel = model.trim();
+    if (!completedRunId || !normalizedModel) {
+      return;
+    }
+    const refreshKey = `${completedRunId}:${normalizedModel}`;
+    if (completedEntryRefreshKeysRef.current.has(refreshKey)) {
+      return;
+    }
+    completedEntryRefreshKeysRef.current.add(refreshKey);
+    requestSavedResponsesRefresh();
   };
 
   const selectedModels = useMemo(() => resolveActiveModels(config), [config]);
@@ -264,16 +332,10 @@ export default function RunPage() {
           if (entry.completed && typeof entry.elapsed_ms === "number") {
             rememberCompletedElapsedMs(entry.model, entry.elapsed_ms);
           }
-        });
-        const mappedResponses: Record<string, string> = {};
-        status.entries.forEach((entry) => {
-          if (entry.model) {
-            mappedResponses[entry.model] = responses[entry.model] ?? "";
+          if (entry.completed && !entry.interrupted && activeRunModels.includes(entry.model)) {
+            requestCompletedEntryRefresh(runId, entry.model);
           }
         });
-        if (Object.keys(mappedResponses).length) {
-          setResponses((prev) => ({ ...prev, ...mappedResponses }));
-        }
         const terminal = runStateFromStatus(status);
         if (terminal === "completed") {
           updateRunHistory(runId, "completed");
@@ -287,7 +349,7 @@ export default function RunPage() {
       }
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [runId, sessionId, responses, updateRunHistory]);
+  }, [activeRunModels, runId, sessionId, updateRunHistory]);
 
   useEffect(() => {
     return () => {
@@ -305,9 +367,6 @@ export default function RunPage() {
         setSavedResponsesStatus("idle");
         return;
       }
-      if (runState === "running") {
-        return;
-      }
 
       setSavedResponsesStatus("loading");
 
@@ -316,6 +375,7 @@ export default function RunPage() {
         if (!active) {
           return;
         }
+        const preserveLiveResponses = runInProgress;
         const mapped: Record<string, string> = {};
         const savedMetaByModel: Record<string, SavedResultMeta> = {};
         for (const model of selectedModels) {
@@ -325,15 +385,46 @@ export default function RunPage() {
             savedMetaByModel[model] = buildSavedResultMeta(savedResult);
           }
         }
-        setResponses(mapped);
-        setSavedResultMeta(savedMetaByModel);
-        setCompletedEntryElapsedMs({});
+        setResponses((prev) => {
+          if (!preserveLiveResponses) {
+            return mapped;
+          }
+
+          const next = { ...prev };
+          for (const model of selectedModels) {
+            const hasSavedResult = Boolean(savedMetaByModel[model]);
+            const keepLiveResponse = activeRunModels.includes(model) && !hasSavedResult;
+            next[model] = keepLiveResponse ? (prev[model] ?? "") : mapped[model];
+          }
+          return next;
+        });
+        setSavedResultMeta((prev) => {
+          if (!preserveLiveResponses) {
+            return savedMetaByModel;
+          }
+
+          const next = { ...prev };
+          for (const model of selectedModels) {
+            if (savedMetaByModel[model]) {
+              next[model] = savedMetaByModel[model];
+            } else if (!activeRunModels.includes(model)) {
+              delete next[model];
+            }
+          }
+          return next;
+        });
+        if (!preserveLiveResponses) {
+          setCompletedEntryElapsedMs({});
+        }
         setSavedResponsesStatus("ready");
       } catch {
         if (active) {
-          setResponses({});
-          setSavedResultMeta({});
-          setCompletedEntryElapsedMs({});
+          if (!runInProgress) {
+            setResponses({});
+            setSavedResultMeta({});
+            setCompletedEntryElapsedMs({});
+          }
+          completedEntryRefreshKeysRef.current.clear();
           setSavedResponsesStatus("error");
         }
       }
@@ -343,7 +434,31 @@ export default function RunPage() {
     return () => {
       active = false;
     };
-  }, [config.datasetKey, activeQuestion?.id, selectedModelsKey]);
+  }, [config.datasetKey, activeQuestion?.id, selectedModelsKey, savedResponsesReloadToken]);
+
+  useEffect(() => {
+    if (runId === null || !runStatus || !activeQuestionLookupKey) {
+      return;
+    }
+
+    const terminalState = runStateFromStatus({
+      running: runStatus.running,
+      completed: runStatus.completed,
+      interrupted: runStatus.interrupted,
+      error: runStatus.error
+    });
+    if (terminalState === "idle" || terminalState === "running") {
+      return;
+    }
+
+    const refreshKey = `${runId}:${terminalState}:${activeQuestionLookupKey}`;
+    if (terminalSavedResponsesRefreshKeyRef.current === refreshKey) {
+      return;
+    }
+
+    terminalSavedResponsesRefreshKeyRef.current = refreshKey;
+    requestSavedResponsesRefresh();
+  }, [activeQuestionLookupKey, runId, runStatus]);
 
   const handleStart = async (modelsOverride?: string[]) => {
     const modelsToRun = Array.from(new Set((modelsOverride ?? selectedModels).map((model) => model.trim()).filter(Boolean)));
@@ -352,6 +467,8 @@ export default function RunPage() {
     }
     setIsStarting(true);
     setInlineBanner(null);
+    terminalSavedResponsesRefreshKeyRef.current = "";
+    completedEntryRefreshKeysRef.current.clear();
     try {
       const payload = await startRun({
         session_id: sessionId,
@@ -484,6 +601,9 @@ export default function RunPage() {
         const payload = JSON.parse((event as MessageEvent).data) as { model?: string; elapsed_ms?: number };
         if (payload.model && typeof payload.elapsed_ms === "number") {
           rememberCompletedElapsedMs(payload.model, payload.elapsed_ms);
+        }
+        if (payload.model) {
+          requestCompletedEntryRefresh(nextRunId, payload.model);
         }
       } catch {
         // ignore malformed completion events
@@ -672,7 +792,7 @@ export default function RunPage() {
               </div>
               <div className="inline-flex items-center gap-2 rounded-ui border border-border bg-white px-3 py-1.5">
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">State</span>
-                <span className="text-sm font-medium">{stateLabel}</span>
+                <span className={statusBadgeClassName(stateLabel)}>{stateLabel}</span>
               </div>
             </div>
           </div>
@@ -848,10 +968,10 @@ export default function RunPage() {
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-semibold">{model}</h3>
-                  <span className="rounded-full border border-border bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
+                  <span className={statusBadgeClassName(evaluationLabel)}>
                     Evaluation: {evaluationLabel}
                   </span>
-                  <span className="rounded-full border border-border bg-slate-50 px-2 py-0.5 text-xs text-slate-700">
+                  <span className={neutralBadgeClassName()}>
                     Evaluation Method: {evaluationMethodLabel}
                   </span>
                 </div>
@@ -870,7 +990,7 @@ export default function RunPage() {
                   </button>
                 </div>
                 <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-muted">
-                  <span>{eventLabel}</span>
+                  <span className={statusBadgeClassName(eventLabel)}>{eventLabel}</span>
                   <span>Duration: {durationText}</span>
                   <span>Tokens: {generatedTokens}{generatedTokensEstimated ? " (est.)" : ""}</span>
                 </div>
