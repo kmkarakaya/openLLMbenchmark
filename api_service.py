@@ -602,14 +602,6 @@ def start_run(
     normalized_models = normalize_selected_models(*models)
     if not normalized_models:
         return None, "invalid_models"
-    requires_cloud_access = any(split_model_ref(model_ref)[1] == CLOUD_SOURCE for model_ref in normalized_models)
-    if requires_cloud_access:
-        from engine import get_cloud_client
-
-        try:
-            get_cloud_client(api_key=ollama_api_key)
-        except RuntimeError:
-            return None, "missing_api_key"
     runner = get_runner(session_id)
     started = runner.start(
         models=normalized_models,

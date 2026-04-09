@@ -96,6 +96,25 @@ def test_runs_endpoint_passes_request_scoped_api_key_header(monkeypatch) -> None
     assert captured["api_key"] == "session-key"
 
 
+def test_runs_endpoint_requires_api_key_for_cloud_models_without_env(monkeypatch) -> None:
+    monkeypatch.setattr("api.get_ollama_auth_status", lambda: {"server_api_key_configured": False})
+    client = TestClient(app)
+
+    response = client.post(
+        "/runs",
+        json={
+            "session_id": "s1",
+            "dataset_key": "default_tr",
+            "question_id": "q001",
+            "models": ["gemma3:4b:cloud"],
+            "system_prompt": "x",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Enter Ollama API Key to be able to use Ollama Cloud models."
+
+
 def test_results_endpoint_uses_baseline_compatible_payload_shape(monkeypatch) -> None:
     client = TestClient(app)
     response = client.get("/results", params={"dataset_key": "default_tr"})

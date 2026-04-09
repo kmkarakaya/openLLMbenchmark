@@ -29,6 +29,7 @@ from api_service import (
     stop_run,
     upload_dataset,
 )
+from model_identity import CLOUD_SOURCE, split_model_ref
 from slo_monitor import get_slo_monitor
 
 
@@ -64,6 +65,12 @@ def _raise_if_runs_circuit_open() -> None:
 
 def _ollama_api_key_from_request(request: Request) -> str:
     return str(request.headers.get(OLLAMA_API_KEY_HEADER, "") or "").strip()
+
+
+def _requires_cloud_access(models: object) -> bool:
+    if not isinstance(models, list):
+        return False
+    return any(split_model_ref(str(model or ""))[1] == CLOUD_SOURCE for model in models)
 
 
 def _record_terminal_run_outcome(
@@ -213,8 +220,15 @@ async def runs(request: Request) -> dict[str, object]:
     question_id = str(body.get("question_id", "")).strip()
     models = body.get("models", [])
     system_prompt = str(body.get("system_prompt", "") or "")
+    ollama_api_key = _ollama_api_key_from_request(request)
     if not dataset_key or not question_id or not isinstance(models, list):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid run payload")
+
+    if _requires_cloud_access(models) and not (ollama_api_key or get_ollama_auth_status()["server_api_key_configured"]):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Enter Ollama API Key to be able to use Ollama Cloud models.",
+        )
 
     run_id, status_text = start_run(
         session_id=session_id,
@@ -222,17 +236,12 @@ async def runs(request: Request) -> dict[str, object]:
         question_id=question_id,
         models=models,
         system_prompt=system_prompt,
-        ollama_api_key=_ollama_api_key_from_request(request),
+        ollama_api_key=ollama_api_key,
     )
     if status_text == "dataset_not_found" or status_text == "question_not_found":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=status_text)
     if status_text == "invalid_models":
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=status_text)
-    if status_text == "missing_api_key":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Enter Ollama API Key to be able to use Ollama Cloud models.",
-        )
     if status_text == "conflict":
         payload: dict[str, object] = {"detail": "A run is already active for this session."}
         if run_id is not None:
