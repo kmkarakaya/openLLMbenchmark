@@ -343,7 +343,7 @@ export default function RunPage() {
     return () => {
       active = false;
     };
-  }, [config.datasetKey, activeQuestion?.id, selectedModelsKey, runState]);
+  }, [config.datasetKey, activeQuestion?.id, selectedModelsKey]);
 
   const handleStart = async (modelsOverride?: string[]) => {
     const modelsToRun = Array.from(new Set((modelsOverride ?? selectedModels).map((model) => model.trim()).filter(Boolean)));
@@ -435,6 +435,7 @@ export default function RunPage() {
     if (!normalizedQuestionId || normalizedQuestionId === config.questionId) {
       return;
     }
+    setSavedResponsesStatus("loading");
     setPendingAutoStartKey(`${config.datasetKey}::${normalizedQuestionId}::${selectedModelsKey}`);
     setConfig({ questionId: normalizedQuestionId });
   };

@@ -360,7 +360,7 @@ test("run page only auto-sends after navigator move", async ({ page }) => {
     });
   });
 
-  await page.route(new RegExp(`${API_HOST}/results\?.+`), async (route) => {
+  await page.route(new RegExp(`${API_HOST}/results\\?.+`), async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     await route.fulfill({
       json: emptyResultsPayload
@@ -386,6 +386,144 @@ test("run page only auto-sends after navigator move", async ({ page }) => {
   expect(runBodies[0]?.models).toEqual(["gemma3:4b"]);
   await expect(page.locator("[data-testid='run-responses-layout'] textarea").first()).toHaveValue("q002-auto-response");
   await expect(previousButton).toBeEnabled();
+});
+
+test("run page comparison mode auto-sends only the missing model after next", async ({ page }) => {
+  await mockBaseApi(page);
+
+  const API_HOST_DIRECT = "http://(localhost|127\\.0\\.0\\.1):(8000|18000)";
+  const API_HOST_PROXY = "http://(localhost|127\\.0\\.0\\.1):3011/api";
+  const API_HOST = `(?:${API_HOST_DIRECT}|${API_HOST_PROXY})`;
+  const runBodies: Array<{ question_id: string; models: string[] }> = [];
+  const runPayloadById = new Map<number, { question_id: string; models: string[] }>();
+  let nextRunId = 300;
+
+  await page.route(new RegExp(`${API_HOST}/results\\?.+`), async (route) => {
+    const url = new URL(route.request().url());
+    const datasetKey = url.searchParams.get("dataset_key") ?? "default_tr";
+    await route.fulfill({
+      json: {
+        dataset_key: datasetKey,
+        results: [
+          {
+            question_id: "q001",
+            model: "gemma3:4b",
+            status: "success",
+            response: "q001-model1",
+            timestamp: "2026-04-09T10:00:00Z"
+          },
+          {
+            question_id: "q001",
+            model: "qwen3:8b",
+            status: "success",
+            response: "q001-model2",
+            timestamp: "2026-04-09T10:00:01Z"
+          },
+          {
+            question_id: "q002",
+            model: "gemma3:4b",
+            status: "success",
+            response: "q002-model1-existing",
+            timestamp: "2026-04-09T10:00:02Z"
+          }
+        ],
+        metrics: [],
+        matrix: []
+      }
+    });
+  });
+
+  await page.route(new RegExp(`${API_HOST}/runs$`), async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+
+    const body = route.request().postDataJSON() as { question_id: string; models: string[] };
+    const runId = nextRunId;
+    nextRunId += 1;
+    runBodies.push(body);
+    runPayloadById.set(runId, body);
+    await route.fulfill({
+      status: 201,
+      json: { run_id: runId, status: "started", session_id: "ui-test-session" }
+    });
+  });
+
+  await page.route(new RegExp(`${API_HOST}/runs/\\d+/events\\?.+`), async (route) => {
+    const match = route.request().url().match(/\/runs\/(\d+)\/events/);
+    const runId = match ? Number(match[1]) : 0;
+    const body = runPayloadById.get(runId);
+    const model = body?.models[0] ?? "qwen3:8b";
+    const questionId = body?.question_id ?? "q002";
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+      body: [
+        "event: chunk",
+        `data: {"run_id":${runId},"model":"${model}","response":"${questionId}-${model}-generated"}`,
+        "",
+        "event: entry_completed",
+        `data: {"run_id":${runId},"model":"${model}","elapsed_ms":920}`,
+        "",
+        "event: run_completed",
+        `data: {"run_id":${runId}}`,
+        ""
+      ].join("\n")
+    });
+  });
+
+  await page.route(new RegExp(`${API_HOST}/runs/\\d+/status\\?.+`), async (route) => {
+    const match = route.request().url().match(/\/runs\/(\d+)\/status/);
+    const runId = match ? Number(match[1]) : 0;
+    const body = runPayloadById.get(runId);
+    const model = body?.models[0] ?? "qwen3:8b";
+    const questionId = body?.question_id ?? "q002";
+    await route.fulfill({
+      status: 200,
+      json: {
+        run_id: runId,
+        session_id: "ui-test-session",
+        dataset_key: "default_tr",
+        question_id: questionId,
+        running: false,
+        completed: true,
+        interrupted: false,
+        error: "",
+        entries: [
+          {
+            model,
+            running: false,
+            completed: true,
+            interrupted: false,
+            error: "",
+            event: "completed",
+            elapsed_ms: 920
+          }
+        ]
+      }
+    });
+  });
+
+  await page.goto("/configure");
+  await page.getByTestId("configure-mode").selectOption("pair");
+  await page.locator("label:has-text('Primary Model') select").selectOption("gemma3:4b");
+  await page.locator("label:has-text('Secondary Model') select").selectOption("qwen3:8b");
+
+  await page.locator("aside").getByRole("link", { name: "Benchmark Run", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Benchmark Run", exact: true })).toBeVisible();
+
+  const responseBoxes = page.locator("[data-testid='run-responses-layout'] textarea");
+  await expect(responseBoxes.nth(0)).toHaveValue("q001-model1");
+  await expect(responseBoxes.nth(1)).toHaveValue("q001-model2");
+
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+
+  await expect.poll(() => runBodies.length).toBe(1);
+  expect(runBodies[0]?.question_id).toBe("q002");
+  expect(runBodies[0]?.models).toEqual(["qwen3:8b"]);
+  await expect(responseBoxes.nth(0)).toHaveValue("q002-model1-existing");
+  await expect(responseBoxes.nth(1)).toHaveValue("q002-qwen3:8b-generated");
 });
 
 test("results page allows model history deletion and refreshes data", async ({ page }) => {
