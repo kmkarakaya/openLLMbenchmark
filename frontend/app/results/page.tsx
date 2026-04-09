@@ -37,6 +37,33 @@ const TABLE_LABELS: Record<ResultsTableKey, string> = {
   response_level_model_performance: "Response-Level Model Performance"
 };
 
+type GroupedPerformance = {
+  rows: Array<{
+    group: string;
+    questionCount: number;
+    accuracies: Record<string, number | null>;
+  }>;
+  models: string[];
+};
+
+type TransposedPerformance = {
+  groups: Array<{ key: string; questionCount: number }>;
+  rows: Array<{ model: string; values: Record<string, number | null> }>;
+};
+
+function transposeGroupedPerformance(perf: GroupedPerformance): TransposedPerformance {
+  const groups = perf.rows.map((row) => ({ key: row.group || "-", questionCount: row.questionCount }));
+  const rows = perf.models.map((model) => {
+    const values: Record<string, number | null> = {};
+    for (const group of groups) {
+      const sourceRow = perf.rows.find((row) => (row.group || "-") === group.key);
+      values[group.key] = sourceRow?.accuracies[model] ?? null;
+    }
+    return { model, values };
+  });
+  return { groups, rows };
+}
+
 export default function ResultsPage() {
   const { config, setConfig } = useAppState();
   const { pushToast } = useToast();
@@ -77,6 +104,14 @@ export default function ResultsPage() {
   const hardnessPerformance = useMemo(
     () => buildHardnessModelPerformance(questions, results),
     [questions, results]
+  );
+  const categoryPerformanceTransposed = useMemo(
+    () => transposeGroupedPerformance(categoryPerformance),
+    [categoryPerformance]
+  );
+  const hardnessPerformanceTransposed = useMemo(
+    () => transposeGroupedPerformance(hardnessPerformance),
+    [hardnessPerformance]
   );
   const availableResultModels = useMemo(
     () =>
@@ -559,17 +594,21 @@ export default function ResultsPage() {
 
       <Card title="Category-Level Model Performance" actions={renderTableExportActions("category_level_model_performance")}>
         <DataTable
-          rows={categoryPerformance.rows}
+          rows={categoryPerformanceTransposed.rows}
           emptyMessage="No category-level performance available yet."
           columns={[
-            { key: "category", header: "Category", render: (row) => row.group || "-" },
-            { key: "count", header: "Questions", render: (row) => String(row.questionCount) },
-            ...categoryPerformance.models.map((model) => ({
-              key: model,
-              header: model,
-              headerHelp: "Category-level accuracy for this model based on scored results (success/fail).",
-              render: (row: (typeof categoryPerformance.rows)[number]) => {
-                const value = row.accuracies[model];
+            {
+              key: "model",
+              header: "Model",
+              headerHelp: "Model identifier; each row shows per-category accuracy for that model.",
+              render: (row) => row.model
+            },
+            ...categoryPerformanceTransposed.groups.map((group) => ({
+              key: group.key,
+              header: `${group.key} (${group.questionCount})`,
+              headerHelp: "Category-level accuracy based on scored results (success/fail).",
+              render: (row: (typeof categoryPerformanceTransposed.rows)[number]) => {
+                const value = row.values[group.key];
                 return typeof value === "number" ? `${value.toFixed(1)}%` : "-";
               }
             }))
@@ -579,17 +618,21 @@ export default function ResultsPage() {
 
       <Card title="Hardness-Level Model Performance" actions={renderTableExportActions("hardness_level_model_performance")}>
         <DataTable
-          rows={hardnessPerformance.rows}
+          rows={hardnessPerformanceTransposed.rows}
           emptyMessage="No hardness-level performance available yet."
           columns={[
-            { key: "hardness", header: "Hardness", render: (row) => row.group || "-" },
-            { key: "count", header: "Questions", render: (row) => String(row.questionCount) },
-            ...hardnessPerformance.models.map((model) => ({
-              key: model,
-              header: model,
-              headerHelp: "Hardness-level accuracy for this model based on scored results (success/fail).",
-              render: (row: (typeof hardnessPerformance.rows)[number]) => {
-                const value = row.accuracies[model];
+            {
+              key: "model",
+              header: "Model",
+              headerHelp: "Model identifier; each row shows per-hardness accuracy for that model.",
+              render: (row) => row.model
+            },
+            ...hardnessPerformanceTransposed.groups.map((group) => ({
+              key: group.key,
+              header: `${group.key} (${group.questionCount})`,
+              headerHelp: "Hardness-level accuracy based on scored results (success/fail).",
+              render: (row: (typeof hardnessPerformanceTransposed.rows)[number]) => {
+                const value = row.values[group.key];
                 return typeof value === "number" ? `${value.toFixed(1)}%` : "-";
               }
             }))

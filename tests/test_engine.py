@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from engine import list_models, stream_chat
+import pytest
+
+from engine import get_cloud_client, get_local_client, list_models, stream_chat
 
 
 class _Message:
@@ -40,6 +42,11 @@ class _ClientForModels:
         return _ListPayload([_ModelItem("llama3"), _ModelItem("qwen3")])
 
 
+class _FailingClientForModels:
+    def list(self):  # type: ignore[no-untyped-def]
+        raise RuntimeError("offline")
+
+
 def test_stream_chat_handles_object_and_dict_chunks() -> None:
     client = _ClientForStream()
     parts = list(stream_chat(client=client, model="x", prompt="p", system_prompt="s"))  # type: ignore[arg-type]
@@ -50,3 +57,33 @@ def test_list_models_handles_object_payload() -> None:
     client = _ClientForModels()
     names = list_models(client=client)  # type: ignore[arg-type]
     assert names == ["llama3", "qwen3"]
+
+
+def test_get_cloud_client_requires_api_key(monkeypatch) -> None:
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
+    with pytest.raises(RuntimeError):
+        get_cloud_client()
+
+
+def test_get_local_client_uses_default_host_without_auth(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+
+    monkeypatch.setattr("engine.Client", _FakeClient)
+    get_local_client()
+    assert captured["host"] == "http://localhost:11434"
+    assert "headers" not in captured
+
+
+def test_list_models_tolerates_local_errors() -> None:
+    client = _FailingClientForModels()
+    assert list_models(client=client, source="local") == []  # type: ignore[arg-type]
+
+
+def test_list_models_raises_for_cloud_errors() -> None:
+    client = _FailingClientForModels()
+    with pytest.raises(RuntimeError):
+        list_models(client=client, source="cloud")  # type: ignore[arg-type]

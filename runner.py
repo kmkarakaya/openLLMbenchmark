@@ -5,12 +5,16 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from engine import get_client, stream_chat
+from engine import get_client_for_source, stream_chat
+from model_identity import resolve_model_host, split_model_ref, to_model_ref
 
 
 @dataclass
 class ModelRunState:
     model: str = ""
+    model_name: str = ""
+    source: str = "cloud"
+    host: str = ""
     trace_id: str = ""
     session_id: str = ""
     dataset_key: str = ""
@@ -56,16 +60,26 @@ class LiveRunner:
         dataset_key: str = "",
         trace_id: str = "",
     ) -> bool:
-        normalized_models: list[str] = []
-        seen_models: set[str] = set()
-        for model in models:
-            normalized = str(model).strip()
-            if not normalized or normalized in seen_models:
+        normalized_targets: list[dict[str, str]] = []
+        seen_refs: set[str] = set()
+        for raw_model in models:
+            model_name, source = split_model_ref(str(raw_model).strip())
+            if not model_name:
                 continue
-            normalized_models.append(normalized)
-            seen_models.add(normalized)
+            model_ref = to_model_ref(model_name, source)
+            if not model_ref or model_ref in seen_refs:
+                continue
+            seen_refs.add(model_ref)
+            normalized_targets.append(
+                {
+                    "model": model_name,
+                    "source": source,
+                    "host": resolve_model_host(source),
+                    "ref": model_ref,
+                }
+            )
 
-        if not normalized_models:
+        if not normalized_targets:
             return False
 
         with self.state.lock:
@@ -83,9 +97,13 @@ class LiveRunner:
             self.state.entries = {}
             self.state.threads = []
             started_at = time.perf_counter()
-            for model in normalized_models:
-                self.state.entries[model] = ModelRunState(
-                    model=model,
+            for target in normalized_targets:
+                model_ref = target["ref"]
+                self.state.entries[model_ref] = ModelRunState(
+                    model=model_ref,
+                    model_name=target["model"],
+                    source=target["source"],
+                    host=target["host"],
                     trace_id=trace_id,
                     session_id=session_id,
                     dataset_key=dataset_key,
@@ -96,10 +114,10 @@ class LiveRunner:
                 )
             run_id = self.state.run_id
 
-        for model in normalized_models:
+        for target in normalized_targets:
             thread = threading.Thread(
                 target=self._run_worker,
-                args=(run_id, model, prompt, system_prompt),
+                args=(run_id, target, prompt, system_prompt),
                 daemon=True,
             )
             self.state.threads.append(thread)
@@ -109,13 +127,17 @@ class LiveRunner:
     def request_stop(self) -> None:
         self.state.stop_event.set()
 
-    def _run_worker(self, run_id: int, model: str, prompt: str, system_prompt: str) -> None:
+    def _run_worker(self, run_id: int, target: dict[str, str], prompt: str, system_prompt: str) -> None:
+        model_ref = target["ref"]
+        model_name = target["model"]
+        source = target["source"]
+        host = target["host"]
         interrupted = False
         error = ""
         chunks: list[str] = []
         try:
-            client = get_client()
-            for chunk in stream_chat(client=client, model=model, prompt=prompt, system_prompt=system_prompt):
+            client = get_client_for_source(source=source, host=host)
+            for chunk in stream_chat(client=client, model=model_name, prompt=prompt, system_prompt=system_prompt):
                 if self.state.stop_event.is_set():
                     interrupted = True
                     break
@@ -123,7 +145,7 @@ class LiveRunner:
                 with self.state.lock:
                     if run_id != self.state.run_id:
                         return
-                    entry = self.state.entries.get(model)
+                    entry = self.state.entries.get(model_ref)
                     if entry is None:
                         return
                     entry.response = "".join(chunks)
@@ -135,7 +157,7 @@ class LiveRunner:
         with self.state.lock:
             if run_id != self.state.run_id:
                 return
-            entry = self.state.entries.get(model)
+            entry = self.state.entries.get(model_ref)
             if entry is None:
                 return
             entry.response = "".join(chunks)
@@ -166,6 +188,9 @@ class LiveRunner:
                 entries.append(
                     {
                         "model": entry.model,
+                        "model_name": entry.model_name,
+                        "source": entry.source,
+                        "host": entry.host,
                         "trace_id": entry.trace_id,
                         "session_id": entry.session_id,
                         "dataset_key": entry.dataset_key,

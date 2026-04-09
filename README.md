@@ -10,7 +10,7 @@ pinned: false
 
 # Open LLM Benchmark (Web App)
 
-A Streamlit web app to benchmark open LLMs on Ollama Cloud using any question/answer dataset.
+A web app stack (API + frontend) to benchmark open LLMs using Ollama Cloud and/or local Ollama models with any question/answer dataset.
 
 The repository includes a Turkish sample dataset by default, but the app is language-agnostic and domain-agnostic.
 You can replace the dataset to benchmark other languages or other skills (for example coding, finance, reasoning, legal, healthcare, etc.).
@@ -163,6 +163,7 @@ Notes:
 
 - `OLLAMA_API_KEY` (required)
 - `OLLAMA_HOST` (optional, default: `https://ollama.com`)
+- `OLLAMA_LOCAL_HOST` (optional, default: `http://localhost:11434`)
 - `API_BASE_URL` (for upcoming v1 API/Next.js integration)
 - `FEATURE_API_READS` (default: `true`)
 - `FEATURE_API_RUNS` (default: `false`)
@@ -171,6 +172,11 @@ Notes:
 - `NEXT_PUBLIC_API_BASE_URL` (frontend runtime API base URL, default `http://localhost:8000`)
 
 If `OLLAMA_API_KEY` is missing at startup, the app asks for it via masked input in the UI.
+
+Model source labeling:
+
+- Model options and report labels include source suffixes such as `qwen3.5:cloud` and `qwen3.5:local`.
+- This suffix is used in run responses, leaderboard/matrix/report tables, JSON/Excel exports, and response-level records.
 
 ## Internal Ops Endpoint
 

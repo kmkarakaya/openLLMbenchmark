@@ -5,20 +5,48 @@ from typing import Iterator
 
 from ollama import Client
 
+from model_identity import (
+    CLOUD_SOURCE,
+    LOCAL_SOURCE,
+    normalize_model_source,
+    resolve_model_host,
+)
 
-DEFAULT_HOST = "https://ollama.com"
 
-
-def get_client() -> Client:
+def get_cloud_client() -> Client:
     api_key = os.getenv("OLLAMA_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("OLLAMA_API_KEY is not set.")
-    host = os.getenv("OLLAMA_HOST", DEFAULT_HOST).strip() or DEFAULT_HOST
+    host = resolve_model_host(CLOUD_SOURCE, cloud_host=os.getenv("OLLAMA_HOST", ""))
     return Client(host=host, headers={"Authorization": f"Bearer {api_key}"})
 
 
-def list_models(client: Client) -> list[str]:
-    payload = client.list()
+def get_local_client(host: str | None = None) -> Client:
+    resolved_host = resolve_model_host(LOCAL_SOURCE, local_host=host)
+    return Client(host=resolved_host)
+
+
+def get_client_for_source(source: str, host: str | None = None) -> Client:
+    normalized_source = normalize_model_source(source)
+    if normalized_source == LOCAL_SOURCE:
+        return get_local_client(host)
+    return get_cloud_client()
+
+
+def get_client() -> Client:
+    # Backward-compatible alias for call sites that still use cloud-only path.
+    return get_cloud_client()
+
+
+def list_models(client: Client, *, source: str = CLOUD_SOURCE) -> list[str]:
+    normalized_source = normalize_model_source(source)
+    try:
+        payload = client.list()
+    except Exception:
+        if normalized_source == LOCAL_SOURCE:
+            return []
+        raise
+
     models = []
     if isinstance(payload, dict):
         raw_models = payload.get("models", [])

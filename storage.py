@@ -12,6 +12,8 @@ from typing import Any
 import pandas as pd
 import portalocker
 
+from model_identity import model_ref_from_record
+
 LOCK_TIMEOUT_SECONDS = 10
 
 
@@ -74,10 +76,10 @@ def save_results(path: Path, results: list[dict[str, Any]]) -> None:
 
 def upsert_result(results: list[dict[str, Any]], record: dict[str, Any]) -> list[dict[str, Any]]:
     output = list(results)
-    key = (record["question_id"], record["model"])
+    key = (record["question_id"], model_ref_from_record(record))
     replaced = False
     for idx, item in enumerate(output):
-        if (item.get("question_id"), item.get("model")) == key:
+        if (item.get("question_id"), model_ref_from_record(item)) == key:
             output[idx] = record
             replaced = True
             break
@@ -104,7 +106,7 @@ def percentile(values: list[float], pct: float) -> float | None:
 def compute_model_metrics(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_model: dict[str, list[dict[str, Any]]] = {}
     for record in results:
-        model = record.get("model", "").strip()
+        model = model_ref_from_record(record)
         if not model:
             continue
         by_model.setdefault(model, []).append(record)
@@ -172,11 +174,11 @@ def render_results_markdown(
     results: list[dict[str, Any]],
     output_path: Path,
 ) -> None:
-    models = sorted({r.get("model", "") for r in results if r.get("model")})
+    models = sorted({model_ref_from_record(r) for r in results if model_ref_from_record(r)})
     record_by_key = {
-        (r.get("question_id"), r.get("model")): r
+        (r.get("question_id"), model_ref_from_record(r)): r
         for r in results
-        if r.get("question_id") and r.get("model")
+        if r.get("question_id") and model_ref_from_record(r)
     }
     metrics = compute_model_metrics(results)
 

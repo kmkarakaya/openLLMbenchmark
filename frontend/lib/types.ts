@@ -23,6 +23,8 @@ export type RunStartResponse = {
 
 export type RunEntryStatus = {
   model: string;
+  source?: string;
+  host?: string;
   running: boolean;
   completed: boolean;
   interrupted: boolean;

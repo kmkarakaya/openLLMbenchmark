@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
+import threading
 from typing import Any
 import uuid
 
@@ -19,9 +20,17 @@ from data.dataset_config import (
     resolve_results_paths,
     save_uploaded_dataset,
 )
+from model_identity import (
+    CLOUD_SOURCE,
+    LOCAL_SOURCE,
+    model_ref_from_record,
+    resolve_model_host,
+    split_model_ref,
+    to_model_ref,
+)
 from mode_selection import normalize_selected_models
 from runner import get_runner
-from scoring import normalize_reason_text
+from scoring import evaluate_response, normalize_reason_text
 from storage import (
     compute_model_metrics,
     load_results,
@@ -44,6 +53,147 @@ TABLE_EXPORT_CATEGORY_PERFORMANCE = "category_level_model_performance"
 TABLE_EXPORT_HARDNESS_PERFORMANCE = "hardness_level_model_performance"
 TABLE_EXPORT_QUESTION_PERFORMANCE = "question_level_model_performance"
 TABLE_EXPORT_RESPONSE_PERFORMANCE = "response_level_model_performance"
+
+_PERSISTED_RUN_ENTRY_KEYS: set[str] = set()
+_PERSISTED_RUN_ENTRY_KEYS_LOCK = threading.Lock()
+
+
+def _normalized_result_row(record: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(record)
+    model_ref = model_ref_from_record(normalized)
+    if not model_ref:
+        return normalized
+
+    model_name, source = split_model_ref(model_ref)
+    normalized["model"] = model_ref
+    normalized["model_source"] = source
+    normalized["model_name"] = model_name
+    if not str(normalized.get("model_host", "") or "").strip():
+        normalized["model_host"] = resolve_model_host(source)
+    return normalized
+
+
+def _normalized_result_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_normalized_result_row(row) for row in rows]
+
+
+def _persist_key_for_entry(snapshot: dict[str, Any], entry: dict[str, Any]) -> str:
+    session_id = str(snapshot.get("session_id", "") or "").strip()
+    run_id = int(snapshot.get("run_id", 0) or 0)
+    question_id = str(snapshot.get("question_id", "") or "").strip()
+    model_ref = model_ref_from_record({"model": entry.get("model", ""), "model_source": entry.get("source", "")})
+    return f"{session_id}:{run_id}:{question_id}:{model_ref}"
+
+
+def _is_entry_persisted(persist_key: str) -> bool:
+    with _PERSISTED_RUN_ENTRY_KEYS_LOCK:
+        return persist_key in _PERSISTED_RUN_ENTRY_KEYS
+
+
+def _mark_entries_persisted(persist_keys: list[str]) -> None:
+    if not persist_keys:
+        return
+    with _PERSISTED_RUN_ENTRY_KEYS_LOCK:
+        _PERSISTED_RUN_ENTRY_KEYS.update(persist_keys)
+
+
+def _verdict_for_entry(entry: dict[str, Any], expected_answer: str) -> dict[str, Any]:
+    if bool(entry.get("interrupted")):
+        return {
+            "status": "manual_review",
+            "score": None,
+            "auto_scored": False,
+            "reason": "Stopped by user.",
+        }
+
+    error_text = str(entry.get("error", "") or "").strip()
+    if error_text:
+        return {
+            "status": "manual_review",
+            "score": None,
+            "auto_scored": False,
+            "reason": f"Error: {error_text}",
+        }
+
+    return evaluate_response(expected_answer=expected_answer, response=str(entry.get("response", "") or ""))
+
+
+def _persist_completed_run_entries(snapshot: dict[str, Any]) -> None:
+    run_id = int(snapshot.get("run_id", 0) or 0)
+    if run_id <= 0:
+        return
+
+    dataset_key = str(snapshot.get("dataset_key", "") or "").strip()
+    question_id = str(snapshot.get("question_id", "") or "").strip()
+    session_id = str(snapshot.get("session_id", "") or "").strip()
+    if not dataset_key or not question_id or not session_id:
+        return
+
+    dataset = _dataset_option_map().get(dataset_key)
+    if dataset is None:
+        return
+    question = next((q for q in dataset["questions"] if str(q.get("id", "") or "") == question_id), None)
+    if question is None:
+        return
+
+    prompt = str(question.get("prompt", "") or "")
+    expected_answer = str(question.get("expected_answer", "") or "")
+    prompt_hash = record_prompt_hash(prompt) if prompt else ""
+    results_path, results_md_path = resolve_results_paths(dataset_key, DATA_DIR, ROOT)
+
+    persisted_keys: list[str] = []
+    with portalocker.Lock(str(LOCK_PATH), timeout=10):
+        rows = load_results(results_path)
+        changed = False
+
+        for entry_raw in snapshot.get("entries", []):
+            if not isinstance(entry_raw, dict):
+                continue
+            if not bool(entry_raw.get("completed")):
+                continue
+
+            entry = dict(entry_raw)
+            model_ref = model_ref_from_record({"model": entry.get("model", ""), "model_source": entry.get("source", "")})
+            if not model_ref:
+                continue
+
+            persist_key = _persist_key_for_entry(snapshot, entry)
+            if _is_entry_persisted(persist_key):
+                continue
+
+            model_name, source = split_model_ref(model_ref)
+            host = str(entry.get("host", "") or "").strip() or resolve_model_host(source)
+            verdict = _verdict_for_entry(entry, expected_answer)
+
+            record = {
+                "dataset_key": dataset_key,
+                "dataset_signature": dataset["signature"],
+                "question_prompt_hash": prompt_hash,
+                "question_id": question_id,
+                "model": model_ref,
+                "model_name": model_name,
+                "model_source": source,
+                "model_host": host,
+                "response": str(entry.get("response", "") or ""),
+                "status": verdict["status"],
+                "score": verdict["score"],
+                "response_time_ms": round(float(entry.get("elapsed_ms", 0.0) or 0.0), 2),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "interrupted": bool(entry.get("interrupted")),
+                "auto_scored": bool(verdict.get("auto_scored")),
+                "reason": normalize_reason_text(str(verdict.get("reason", "") or "")),
+                "run_id": run_id,
+                "session_id": session_id,
+            }
+            rows = upsert_result(rows, record)
+            persisted_keys.append(persist_key)
+            changed = True
+
+        if changed:
+            save_results(results_path, rows)
+            render_results_markdown(dataset["questions"], rows, results_md_path)
+
+    _mark_entries_persisted(persisted_keys)
 
 
 def _dataset_option_map() -> dict[str, dict[str, Any]]:
@@ -69,10 +219,35 @@ def get_health() -> dict[str, str]:
 
 
 def get_models() -> list[str]:
-    from engine import get_client, list_models
+    from engine import get_cloud_client, get_local_client, list_models
 
-    client = get_client()
-    return list_models(client)
+    model_refs: set[str] = set()
+    cloud_error: Exception | None = None
+
+    try:
+        cloud_client = get_cloud_client()
+        for model in list_models(cloud_client, source=CLOUD_SOURCE):
+            model_ref = to_model_ref(model, CLOUD_SOURCE)
+            if model_ref:
+                model_refs.add(model_ref)
+    except Exception as exc:  # noqa: BLE001
+        cloud_error = exc
+
+    try:
+        local_client = get_local_client()
+        for model in list_models(local_client, source=LOCAL_SOURCE):
+            model_ref = to_model_ref(model, LOCAL_SOURCE)
+            if model_ref:
+                model_refs.add(model_ref)
+    except Exception:
+        # Local model discovery is best-effort and should not block cloud usage.
+        pass
+
+    if model_refs:
+        return sorted(model_refs)
+    if cloud_error is not None:
+        raise RuntimeError(str(cloud_error))
+    raise RuntimeError("No models discovered from Ollama cloud/local providers.")
 
 
 def get_datasets() -> list[dict[str, Any]]:
@@ -108,7 +283,7 @@ def get_results(dataset_key: str) -> dict[str, Any] | None:
         return None
     results_path, _ = resolve_results_paths(dataset_key, DATA_DIR, ROOT)
     with portalocker.Lock(str(LOCK_PATH), timeout=10):
-        rows = load_results(results_path)
+        rows = _normalized_result_rows(load_results(results_path))
     matrix = _build_matrix(dataset["questions"], rows)
     return {
         "dataset_key": dataset_key,
@@ -160,7 +335,7 @@ def export_results(dataset_key: str, export_format: str) -> tuple[bytes, str, st
         return None
     results_path, _ = resolve_results_paths(dataset_key, DATA_DIR, ROOT)
     with portalocker.Lock(str(LOCK_PATH), timeout=10):
-        rows = load_results(results_path)
+        rows = _normalized_result_rows(load_results(results_path))
     stem = "results" if dataset_key == DEFAULT_DATASET_KEY else f"results_{dataset_key}"
     if export_format == "json":
         return prepare_results_json(rows), "application/json", f"{stem}.json"
@@ -184,7 +359,7 @@ def export_results_table(
 
     results_path, _ = resolve_results_paths(dataset_key, DATA_DIR, ROOT)
     with portalocker.Lock(str(LOCK_PATH), timeout=10):
-        rows = load_results(results_path)
+        rows = _normalized_result_rows(load_results(results_path))
 
     if table_key == TABLE_EXPORT_MODEL_LEADERBOARD:
         table_rows = _table_rows_model_leader_board(rows)
@@ -229,8 +404,9 @@ def delete_model_results(*, dataset_key: str, model: str) -> tuple[str, dict[str
     if dataset is None:
         return "dataset_not_found", None
 
-    selected_model = model.strip()
-    if not selected_model:
+    selected_model_input = model.strip()
+    selected_model_ref = to_model_ref(selected_model_input)
+    if not selected_model_ref:
         return "invalid_model", None
 
     results_path, results_md_path = resolve_results_paths(dataset_key, DATA_DIR, ROOT)
@@ -240,8 +416,8 @@ def delete_model_results(*, dataset_key: str, model: str) -> tuple[str, dict[str
         deleted_count = 0
 
         for row in rows:
-            row_model = str(row.get("model", "")).strip()
-            if row_model != selected_model:
+            row_model_ref = model_ref_from_record(row)
+            if row_model_ref != selected_model_ref:
                 kept_rows.append(row)
                 continue
             if _is_row_in_dataset_scope(row, dataset_key=dataset_key, dataset_signature=str(dataset["signature"])):
@@ -257,12 +433,12 @@ def delete_model_results(*, dataset_key: str, model: str) -> tuple[str, dict[str
 
     return "deleted", {
         "dataset_key": dataset_key,
-        "model": selected_model,
+        "model": selected_model_input,
         "deleted_count": deleted_count,
         "remaining_count": sum(
             1
             for row in kept_rows
-            if str(row.get("model", "")).strip() == selected_model
+            if model_ref_from_record(row) == selected_model_ref
             and _is_row_in_dataset_scope(
                 row,
                 dataset_key=dataset_key,
@@ -291,6 +467,11 @@ def apply_manual_result_override(
     selected = override_defaults.get(status)
     if selected is None:
         return "invalid_status", None
+    selected_model_ref = to_model_ref(model)
+    if not selected_model_ref:
+        return "result_not_found", None
+    selected_model_name, selected_source = split_model_ref(selected_model_ref)
+
     results_path, results_md_path = resolve_results_paths(dataset_key, DATA_DIR, ROOT)
     with portalocker.Lock(str(LOCK_PATH), timeout=10):
         rows = load_results(results_path)
@@ -298,7 +479,7 @@ def apply_manual_result_override(
             (
                 row
                 for row in rows
-                if str(row.get("question_id", "")) == question_id and str(row.get("model", "")) == model
+                if str(row.get("question_id", "")) == question_id and model_ref_from_record(row) == selected_model_ref
             ),
             None,
         )
@@ -307,6 +488,11 @@ def apply_manual_result_override(
         updated = dict(existing)
         updated["dataset_key"] = dataset_key
         updated["dataset_signature"] = dataset["signature"]
+        updated["model"] = selected_model_ref
+        updated["model_name"] = selected_model_name
+        updated["model_source"] = selected_source
+        if not str(updated.get("model_host", "") or "").strip():
+            updated["model_host"] = resolve_model_host(selected_source)
         updated["status"] = status
         updated["score"] = selected["score"]
         updated["auto_scored"] = False
@@ -366,7 +552,9 @@ def stop_run(*, session_id: str) -> None:
 
 def run_snapshot(*, session_id: str) -> dict[str, Any]:
     runner = get_runner(session_id)
-    return runner.snapshot()
+    snapshot = runner.snapshot()
+    _persist_completed_run_entries(snapshot)
+    return snapshot
 
 
 def get_run_status(*, run_id: int, session_id: str) -> dict[str, Any] | None:
@@ -376,18 +564,24 @@ def get_run_status(*, run_id: int, session_id: str) -> dict[str, Any] | None:
     entries = snapshot.get("entries", [])
     interrupted = any(bool(item.get("interrupted")) for item in entries)
     error = next((str(item.get("error", "")) for item in entries if str(item.get("error", "")).strip()), "")
-    status_entries = [
-        {
-            "model": str(item.get("model", "")),
-            "running": bool(item.get("running")),
-            "completed": bool(item.get("completed")),
-            "interrupted": bool(item.get("interrupted")),
-            "error": str(item.get("error", "")),
-            "event": str(item.get("event", "")),
-            "elapsed_ms": float(item.get("elapsed_ms", 0.0)),
-        }
-        for item in entries
-    ]
+    status_entries: list[dict[str, Any]] = []
+    for item in entries:
+        model_ref = model_ref_from_record({"model": item.get("model", ""), "model_source": item.get("source", "")})
+        _, source = split_model_ref(model_ref, str(item.get("source", "") or CLOUD_SOURCE))
+        host = str(item.get("host", "") or "").strip() or resolve_model_host(source)
+        status_entries.append(
+            {
+                "model": model_ref,
+                "source": source,
+                "host": host,
+                "running": bool(item.get("running")),
+                "completed": bool(item.get("completed")),
+                "interrupted": bool(item.get("interrupted")),
+                "error": str(item.get("error", "")),
+                "event": str(item.get("event", "")),
+                "elapsed_ms": float(item.get("elapsed_ms", 0.0)),
+            }
+        )
     return {
         "run_id": run_id,
         "session_id": str(snapshot.get("session_id", "")),
@@ -402,10 +596,11 @@ def get_run_status(*, run_id: int, session_id: str) -> dict[str, Any] | None:
 
 
 def _build_matrix(questions: list[dict[str, Any]], results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    models = sorted({str(row.get("model", "")) for row in results if str(row.get("model", "")).strip()})
+    models = sorted({model_ref_from_record(row) for row in results if model_ref_from_record(row)})
     indexed = {
-        (str(row.get("question_id", "")), str(row.get("model", ""))): row
+        (str(row.get("question_id", "")), model_ref_from_record(row)): row
         for row in results
+        if model_ref_from_record(row)
     }
     matrix: list[dict[str, Any]] = []
     for question in questions:
@@ -451,10 +646,10 @@ def _table_rows_group_performance(
             question_to_group[question_id] = group_value
         group_counts[group_value] = group_counts.get(group_value, 0) + 1
 
-    models = sorted({str(row.get("model", "")).strip() for row in results if str(row.get("model", "")).strip()})
+    models = sorted({model_ref_from_record(row) for row in results if model_ref_from_record(row)})
     counters: dict[str, dict[str, dict[str, int]]] = {}
     for row in results:
-        model = str(row.get("model", "")).strip()
+        model = model_ref_from_record(row)
         question_id = str(row.get("question_id", "")).strip()
         status = str(row.get("status", "")).strip()
         if not model or not question_id:

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 import api
 from api import app
 import api_service
+from data.dataset_config import resolve_results_paths
 from fixtures import load_baseline_fixtures
 from slo_monitor import get_slo_monitor
 
@@ -783,3 +784,101 @@ def test_baseline_fixture_json_matches_repo_results_json_shape() -> None:
         baseline_keys = set(baseline_results[0].keys())
         repo_keys = set(repo_results[0].keys())
         assert baseline_keys == repo_keys
+
+
+def test_get_models_preserves_explicit_cloud_suffix_from_local_provider(monkeypatch) -> None:
+    cloud_client = object()
+    local_client = object()
+
+    monkeypatch.setattr("engine.get_cloud_client", lambda: cloud_client)
+    monkeypatch.setattr("engine.get_local_client", lambda: local_client)
+
+    def fake_list_models(client, source="cloud"):  # type: ignore[no-untyped-def]
+        if client is cloud_client:
+            return ["gemma3:4b"]
+        if client is local_client:
+            return ["glm-5:cloud", "qwen3.5:cloud"]
+        return []
+
+    monkeypatch.setattr("engine.list_models", fake_list_models)
+    models = api_service.get_models()
+
+    assert "gemma3:4b:cloud" in models
+    assert "glm-5:cloud" in models
+    assert "qwen3.5:cloud" in models
+    assert "glm-5:local" not in models
+    assert "qwen3.5:local" not in models
+
+
+def test_run_status_persists_completed_entries_with_model_source(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FEATURE_API_RUNS", "true")
+
+    data_dir = tmp_path / "data"
+    root_dir = tmp_path
+    data_dir.mkdir(parents=True, exist_ok=True)
+    (data_dir / "results_by_dataset").mkdir(parents=True, exist_ok=True)
+
+    dataset_key = "uploaded_demo"
+    dataset_signature = "sig-123"
+    question_id = "q001"
+
+    monkeypatch.setattr(api_service, "DATA_DIR", data_dir)
+    monkeypatch.setattr(api_service, "ROOT", root_dir)
+    monkeypatch.setattr(
+        api_service,
+        "_dataset_option_map",
+        lambda: {
+            dataset_key: {
+                "key": dataset_key,
+                "label": "Uploaded",
+                "is_default": False,
+                "path": tmp_path / "uploaded-demo.json",
+                "signature": dataset_signature,
+                "instruction": "",
+                "questions": [{"id": question_id, "prompt": "2+2 nedir?", "expected_answer": "4"}],
+            }
+        },
+    )
+
+    snapshot = {
+        "run_id": 77,
+        "trace_id": "trace-1",
+        "session_id": "sess-1",
+        "dataset_key": dataset_key,
+        "question_id": question_id,
+        "running": False,
+        "completed": True,
+        "entries": [
+            {
+                "model": "gemma3:4b:local",
+                "source": "local",
+                "host": "http://localhost:11434",
+                "response": "4",
+                "running": False,
+                "completed": True,
+                "interrupted": False,
+                "error": "",
+                "event": "entry_completed",
+                "elapsed_ms": 320.0,
+            }
+        ],
+    }
+
+    class _Runner:
+        def snapshot(self):  # type: ignore[no-untyped-def]
+            return snapshot
+
+    monkeypatch.setattr(api_service, "get_runner", lambda session_id: _Runner())
+
+    payload = api_service.get_run_status(run_id=77, session_id="sess-1")
+    assert payload is not None
+    assert payload["entries"][0]["model"] == "gemma3:4b:local"
+    assert payload["entries"][0]["source"] == "local"
+
+    results_path, _ = resolve_results_paths(dataset_key, data_dir, root_dir)
+    persisted = json.loads(results_path.read_text(encoding="utf-8"))
+    assert len(persisted) == 1
+    assert persisted[0]["model"] == "gemma3:4b:local"
+    assert persisted[0]["model_source"] == "local"
+    assert persisted[0]["model_host"] == "http://localhost:11434"
+    assert persisted[0]["status"] == "success"

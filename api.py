@@ -299,11 +299,21 @@ async def run_events(
                 entries = snapshot.get("entries", [])
                 for entry in entries:
                     model = str(entry.get("model", ""))
+                    source = str(entry.get("source", ""))
+                    host = str(entry.get("host", ""))
                     response = str(entry.get("response", ""))
                     monitor.register_chunk(stream_key)
                     yield {
                         "event": "chunk",
-                        "data": json.dumps({"run_id": run_id, "model": model, "response": response}),
+                        "data": json.dumps(
+                            {
+                                "run_id": run_id,
+                                "model": model,
+                                "source": source,
+                                "host": host,
+                                "response": response,
+                            }
+                        ),
                     }
                     if bool(entry.get("completed")) and model not in emitted_completed_for:
                         emitted_completed_for.add(model)
@@ -311,6 +321,8 @@ async def run_events(
                         payload = {
                             "run_id": run_id,
                             "model": model,
+                            "source": source,
+                            "host": host,
                             "interrupted": bool(entry.get("interrupted")),
                             "error": str(entry.get("error", "")),
                         }

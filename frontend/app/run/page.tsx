@@ -332,6 +332,21 @@ export default function RunPage() {
     }
   };
 
+  const handleCopyResponse = async (model: string) => {
+    const response = responses[model] ?? "";
+    if (!response.trim()) {
+      pushToast("warning", `No response available to copy for ${model}.`);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(response);
+      pushToast("success", `Response copied for ${model}.`);
+    } catch {
+      pushToast("danger", "Unable to copy response. Please try again.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="grid gap-5">
@@ -555,9 +570,23 @@ export default function RunPage() {
         <div className={responseLayout === "horizontal" ? "grid gap-3 md:grid-cols-2" : "grid gap-3"} data-testid="run-responses-layout">
           {selectedModels.map((model) => (
             <article key={model} className="rounded-ui border border-border bg-white p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-semibold">{model}</h3>
-                <span className="text-xs text-muted">
+                <div className="flex flex-wrap gap-2">
+                  <button className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs" onClick={() => void handleManual(model, "success")}>
+                    Mark Successful
+                  </button>
+                  <button className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs" onClick={() => void handleManual(model, "fail")}>
+                    Mark Failed
+                  </button>
+                  <button className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs" onClick={() => void handleManual(model, "manual_review")}>
+                    Needs Review
+                  </button>
+                  <button className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs" onClick={() => void handleCopyResponse(model)}>
+                    Copy
+                  </button>
+                </div>
+                <span className="ml-auto text-xs text-muted">
                   {runStatus?.entries.find((entry) => entry.model === model)?.event ?? "idle"}
                 </span>
               </div>
@@ -582,6 +611,9 @@ export default function RunPage() {
                 </button>
                 <button className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs" onClick={() => void handleManual(model, "manual_review")}>
                   Needs Review
+                </button>
+                <button className="focus-ring rounded-ui border border-border bg-white px-2 py-1 text-xs" onClick={() => void handleCopyResponse(model)}>
+                  Copy
                 </button>
               </div>
             </article>
