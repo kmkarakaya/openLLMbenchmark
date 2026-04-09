@@ -10,30 +10,34 @@ import type {
   SloStatus
 } from "./types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 export class ApiError extends Error {
   status: number;
+  payload: Record<string, unknown>;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, payload: Record<string, unknown> = {}) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.payload = payload;
   }
 }
 
 async function parseResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = `Request failed (${res.status})`;
+    let payload: Record<string, unknown> = {};
     try {
-      const payload = (await res.json()) as { detail?: string };
-      if (payload.detail) {
-        detail = payload.detail;
+      payload = (await res.json()) as Record<string, unknown>;
+      const rawDetail = payload.detail;
+      if (typeof rawDetail === "string" && rawDetail.trim()) {
+        detail = rawDetail;
       }
     } catch {
       // keep default detail
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, payload);
   }
   return (await res.json()) as T;
 }
@@ -177,10 +181,10 @@ export async function getSloStatus(): Promise<SloStatus> {
   return parseResponse(await fetch(`${API_BASE_URL}/ops/slo`, { cache: "no-store" }));
 }
 
-export function isApiDisabledError(error: unknown): boolean {
-  if (!(error instanceof ApiError)) {
-    return false;
-  }
-  const message = error.message.toLowerCase();
-  return error.status === 404 && message.includes("disabled");
+export async function resetSloStatus(): Promise<{ status: string; slo: SloStatus }> {
+  return parseResponse(
+    await fetch(`${API_BASE_URL}/ops/slo/reset`, {
+      method: "POST"
+    })
+  );
 }

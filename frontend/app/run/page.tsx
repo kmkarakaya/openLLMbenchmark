@@ -57,11 +57,20 @@ function markdownToSafeHtml(markdown: string): string {
 }
 
 function findLatestSavedResponse(rows: Array<Record<string, unknown>>, questionId: string, model: string): string {
+  const latest = findLatestSavedResult(rows, questionId, model);
+  return latest ? String(latest.response ?? "") : "";
+}
+
+function findLatestSavedResult(
+  rows: Array<Record<string, unknown>>,
+  questionId: string,
+  model: string
+): Record<string, unknown> | null {
   const matches = rows.filter(
     (row) => String(row.question_id ?? "").trim() === questionId && String(row.model ?? "").trim() === model
   );
   if (!matches.length) {
-    return "";
+    return null;
   }
 
   let latestWithTimestamp: Record<string, unknown> | null = null;
@@ -75,9 +84,32 @@ function findLatestSavedResponse(rows: Array<Record<string, unknown>>, questionI
     }
   }
 
-  const chosen = latestWithTimestamp ?? matches[matches.length - 1];
-  return String(chosen.response ?? "");
+  return latestWithTimestamp ?? matches[matches.length - 1];
 }
+
+function formatElapsedSeconds(elapsedMs: number | undefined): string {
+  if (typeof elapsedMs !== "number" || !Number.isFinite(elapsedMs) || elapsedMs < 0) {
+    return "-";
+  }
+  return `${(elapsedMs / 1000).toFixed(1)}s`;
+}
+
+function estimateTokenCount(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return 0;
+  }
+  const chars = trimmed.length;
+  const words = trimmed.split(/\s+/).filter(Boolean).length;
+  return Math.max(words, Math.round(chars / 4));
+}
+
+type SavedResultMeta = {
+  responseTimeMs?: number;
+  generatedTokens: number;
+  generatedTokensEstimated: boolean;
+  eventLabel: string;
+};
 
 export default function RunPage() {
   const { sessionId, config, setConfig, addRunHistory, updateRunHistory } = useAppState();
@@ -88,9 +120,13 @@ export default function RunPage() {
   const [runId, setRunId] = useState<number | null>(null);
   const [runStatus, setRunStatus] = useState<RunStatusResponse | null>(null);
   const [responses, setResponses] = useState<Record<string, string>>({});
+  const [savedResultMeta, setSavedResultMeta] = useState<Record<string, SavedResultMeta>>({});
   const [questionLayout, setQuestionLayout] = useState<"vertical" | "horizontal">("vertical");
   const [responseLayout, setResponseLayout] = useState<"vertical" | "horizontal">("vertical");
   const [responseFormat, setResponseFormat] = useState<"plain" | "markdown">("plain");
+  const [isStarting, setIsStarting] = useState(false);
+  const [runStartedAtMs, setRunStartedAtMs] = useState<number | null>(null);
+  const [liveClockMs, setLiveClockMs] = useState(() => Date.now());
   const [inlineBanner, setInlineBanner] = useState<{ tone: "info" | "warning" | "danger" | "success"; title: string; message: string } | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -111,7 +147,20 @@ export default function RunPage() {
         error: runStatus.error
       })
     : "idle";
+  const isAwaitingRunStatus = runId !== null && runStatus === null;
+  const runInProgress = isStarting || runState === "running" || isAwaitingRunStatus;
+  const stateLabel = runInProgress ? "Response being generated" : runState;
   const selectedModelsKey = useMemo(() => selectedModels.join("|"), [selectedModels]);
+
+  useEffect(() => {
+    if (!runInProgress) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setLiveClockMs(Date.now());
+    }, 200);
+    return () => window.clearInterval(interval);
+  }, [runInProgress]);
 
   useEffect(() => {
     let active = true;
@@ -190,6 +239,7 @@ export default function RunPage() {
     const loadPreviousResponses = async () => {
       if (!activeQuestion || !selectedModels.length) {
         setResponses({});
+        setSavedResultMeta({});
         return;
       }
       if (runState === "running") {
@@ -202,13 +252,34 @@ export default function RunPage() {
           return;
         }
         const mapped: Record<string, string> = {};
+        const savedMetaByModel: Record<string, SavedResultMeta> = {};
         for (const model of selectedModels) {
-          mapped[model] = findLatestSavedResponse(payload.results, activeQuestion.id, model);
+          const savedResult = findLatestSavedResult(payload.results, activeQuestion.id, model);
+          mapped[model] = savedResult ? String(savedResult.response ?? "") : "";
+          if (savedResult) {
+            const responseText = String(savedResult.response ?? "");
+            const rawGeneratedTokens = savedResult.generated_tokens;
+            const generatedTokens =
+              typeof rawGeneratedTokens === "number" && Number.isFinite(rawGeneratedTokens)
+                ? Number(rawGeneratedTokens)
+                : estimateTokenCount(responseText);
+            savedMetaByModel[model] = {
+              responseTimeMs:
+                typeof savedResult.response_time_ms === "number" && Number.isFinite(savedResult.response_time_ms)
+                  ? Number(savedResult.response_time_ms)
+                  : undefined,
+              generatedTokens,
+              generatedTokensEstimated: !(typeof rawGeneratedTokens === "number" && Number.isFinite(rawGeneratedTokens)),
+              eventLabel: String(savedResult.status ?? "saved") || "saved"
+            };
+          }
         }
         setResponses(mapped);
+        setSavedResultMeta(savedMetaByModel);
       } catch {
         if (active) {
           setResponses({});
+          setSavedResultMeta({});
         }
       }
     };
@@ -222,6 +293,8 @@ export default function RunPage() {
   const openRunStream = (nextRunId: number) => {
     eventSourceRef.current?.close();
     const source = new EventSource(runEventsUrl(nextRunId, sessionId));
+    let interruptedNotified = false;
+    let errorNotified = false;
     source.addEventListener("chunk", (event) => {
       try {
         const payload = JSON.parse((event as MessageEvent).data) as { model: string; response: string };
@@ -240,17 +313,23 @@ export default function RunPage() {
       source.close();
     });
     source.addEventListener("run_interrupted", () => {
+      if (interruptedNotified) {
+        return;
+      }
+      interruptedNotified = true;
       updateRunHistory(nextRunId, "interrupted");
       pushToast("warning", `Run ${nextRunId} interrupted.`);
       setInlineBanner({ tone: "warning", title: "Run interrupted:", message: `Run ${nextRunId} was stopped by operator.` });
-      source.close();
     });
     source.addEventListener("run_error", (event) => {
+      if (errorNotified) {
+        return;
+      }
+      errorNotified = true;
       updateRunHistory(nextRunId, "error");
       const data = (event as MessageEvent).data;
       pushToast("danger", `Run ${nextRunId} error: ${data || "unknown"}`);
       setInlineBanner({ tone: "danger", title: "Run error:", message: data || "Unknown stream error." });
-      source.close();
     });
     source.onerror = () => {
       setInlineBanner({
@@ -264,9 +343,10 @@ export default function RunPage() {
   };
 
   const handleStart = async () => {
-    if (!activeQuestion || !canStart) {
+    if (!activeQuestion || !canStart || isStarting) {
       return;
     }
+    setIsStarting(true);
     setInlineBanner(null);
     try {
       const payload = await startRun({
@@ -276,6 +356,7 @@ export default function RunPage() {
         models: selectedModels,
         system_prompt: config.systemPrompt
       });
+      setRunStartedAtMs(Date.now());
       setRunId(payload.run_id);
       setRunStatus(null);
       setResponses({});
@@ -292,10 +373,32 @@ export default function RunPage() {
       const message = exc instanceof Error ? exc.message : String(exc);
       if (exc instanceof ApiError && exc.status === 503) {
         setInlineBanner({ tone: "warning", title: "Run unavailable:", message });
+      } else if (exc instanceof ApiError && exc.status === 409) {
+        const conflictRunId = Number(exc.payload.run_id ?? 0);
+        if (Number.isFinite(conflictRunId) && conflictRunId > 0) {
+          setRunStartedAtMs(Date.now());
+          setRunId(conflictRunId);
+          openRunStream(conflictRunId);
+          setInlineBanner({
+            tone: "warning",
+            title: "Run already active:",
+            message: `Attached to active run ${conflictRunId} for this session.`
+          });
+          pushToast("warning", `Attached to active run ${conflictRunId}.`);
+        } else {
+          setInlineBanner({
+            tone: "warning",
+            title: "Run already active:",
+            message: "A run is already active for this session. Wait for completion or stop it first."
+          });
+          pushToast("warning", "A run is already active for this session.");
+        }
       } else {
         setInlineBanner({ tone: "danger", title: "Run start failed:", message });
+        pushToast("danger", message);
       }
-      pushToast("danger", message);
+    } finally {
+      setIsStarting(false);
     }
   };
 
@@ -305,6 +408,12 @@ export default function RunPage() {
     }
     try {
       await stopRun(runId, sessionId);
+      try {
+        const latestStatus = await getRunStatus(runId, sessionId);
+        setRunStatus(latestStatus);
+      } catch {
+        // Polling loop will reconcile status if this immediate refresh fails.
+      }
       updateRunHistory(runId, "stopped");
       pushToast("warning", "Stop request sent.");
       setInlineBanner({ tone: "warning", title: "Stop requested:", message: "Run interruption is in progress." });
@@ -423,7 +532,7 @@ export default function RunPage() {
               </div>
               <div className="inline-flex items-center gap-2 rounded-ui border border-border bg-white px-3 py-1.5">
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">State</span>
-                <span className="text-sm font-medium">{runState}</span>
+                <span className="text-sm font-medium">{stateLabel}</span>
               </div>
             </div>
           </div>
@@ -503,14 +612,14 @@ export default function RunPage() {
                 <button
                   className="focus-ring rounded-ui bg-primary px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={handleStart}
-                  disabled={!canStart || runState === "running"}
+                  disabled={!canStart || runInProgress}
                 >
-                  Start Run
+                  {isStarting ? "Sending..." : "Send"}
                 </button>
                 <button
                   className="focus-ring rounded-ui border border-border bg-white px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={handleStop}
-                  disabled={!runId || runState !== "running"}
+                  disabled={!runId || !runInProgress}
                 >
                   Stop
                 </button>
@@ -568,7 +677,27 @@ export default function RunPage() {
         }
       >
         <div className={responseLayout === "horizontal" ? "grid gap-3 md:grid-cols-2" : "grid gap-3"} data-testid="run-responses-layout">
-          {selectedModels.map((model) => (
+          {selectedModels.map((model) => {
+            const responseText = responses[model] ?? "";
+            const statusEntry = runStatus?.entries.find((entry) => entry.model === model);
+            const persistedMeta = savedResultMeta[model];
+            const statusElapsedMs = typeof statusEntry?.elapsed_ms === "number" ? statusEntry.elapsed_ms : undefined;
+            const liveElapsedMs = runStartedAtMs !== null ? Math.max(0, liveClockMs - runStartedAtMs) : undefined;
+            const durationMs = runInProgress
+              ? Math.max(statusElapsedMs ?? 0, liveElapsedMs ?? 0)
+              : statusElapsedMs ?? persistedMeta?.responseTimeMs;
+            const durationText = formatElapsedSeconds(durationMs);
+            const generatedTokens =
+              typeof (statusEntry as Record<string, unknown> | undefined)?.generated_tokens === "number"
+                ? Number((statusEntry as Record<string, unknown>).generated_tokens)
+                : persistedMeta?.generatedTokens ?? estimateTokenCount(responseText);
+            const generatedTokensEstimated =
+              typeof (statusEntry as Record<string, unknown> | undefined)?.generated_tokens === "number"
+                ? false
+                : persistedMeta?.generatedTokensEstimated ?? true;
+            const eventLabel = statusEntry?.event ?? (runInProgress ? "generating" : persistedMeta?.eventLabel ?? "idle");
+
+            return (
             <article key={model} className="rounded-ui border border-border bg-white p-3">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-semibold">{model}</h3>
@@ -586,20 +715,22 @@ export default function RunPage() {
                     Copy
                   </button>
                 </div>
-                <span className="ml-auto text-xs text-muted">
-                  {runStatus?.entries.find((entry) => entry.model === model)?.event ?? "idle"}
-                </span>
+                <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-muted">
+                  <span>{eventLabel}</span>
+                  <span>Duration: {durationText}</span>
+                  <span>Tokens: {generatedTokens}{generatedTokensEstimated ? " (est.)" : ""}</span>
+                </div>
               </div>
               {responseFormat === "plain" ? (
                 <textarea
                   readOnly
-                  value={responses[model] ?? ""}
+                  value={responseText}
                   className="font-log focus-ring min-h-32 w-full rounded-ui border border-border bg-slate-50 px-3 py-2 text-xs"
                 />
               ) : (
                 <div
                   className="min-h-32 rounded-ui border border-border bg-slate-50 px-3 py-2 text-xs leading-6"
-                  dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(responses[model] ?? "") }}
+                  dangerouslySetInnerHTML={{ __html: markdownToSafeHtml(responseText) }}
                 />
               )}
               <div className="mt-2 flex flex-wrap gap-2">
@@ -617,7 +748,7 @@ export default function RunPage() {
                 </button>
               </div>
             </article>
-          ))}
+          );})}
         </div>
       </Card>
     </div>

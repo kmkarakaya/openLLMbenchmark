@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { Card } from "../../components/card";
 import { EmptyState } from "../../components/empty-state";
@@ -9,31 +10,32 @@ import { Field } from "../../components/field";
 import { LoadingSkeleton } from "../../components/loading-skeleton";
 import { ModelPicker } from "../../components/model-picker";
 import { Select } from "../../components/select";
-import { StatusBanner } from "../../components/status-banner";
 import { useToast } from "../../components/toast-host";
-import { getDatasets, getModels, getQuestions, isApiDisabledError } from "../../lib/api";
+import { getDatasets, getModels, getQuestions } from "../../lib/api";
 import { useAppState } from "../../lib/app-state";
 import type { DatasetOption } from "../../lib/types";
 import { hasModelSelectionError, resolveActiveModels } from "../../lib/view-models";
 
 export default function ConfigurePage() {
+  const router = useRouter();
   const { config, setConfig } = useAppState();
   const { pushToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [error, setError] = useState<string>("");
-  const [apiDisabledBanner, setApiDisabledBanner] = useState<string>("");
 
   const selectionError = hasModelSelectionError(config);
   const activeModels = useMemo(() => resolveActiveModels(config), [config]);
+  const canRunBenchmark = Boolean(
+    config.datasetKey.trim() && config.questionId.trim() && config.systemPrompt.trim() && !selectionError && activeModels.length > 0
+  );
 
   useEffect(() => {
     let active = true;
     const load = async () => {
       setLoading(true);
       setError("");
-      setApiDisabledBanner("");
       try {
         const datasetsPayload = await getDatasets();
         if (!active) {
@@ -57,11 +59,7 @@ export default function ConfigurePage() {
         }
       } catch (exc) {
         const message = exc instanceof Error ? exc.message : String(exc);
-        if (isApiDisabledError(exc)) {
-          setApiDisabledBanner("API read endpoints are currently disabled by feature flags.");
-        } else {
-          setError(message);
-        }
+        setError(message);
       }
 
       try {
@@ -70,19 +68,9 @@ export default function ConfigurePage() {
           return;
         }
         setModels(modelPayload);
-        if (!config.model1 && modelPayload[0]) {
-          setConfig({ model1: modelPayload[0] });
-        }
-        if (!config.model2 && modelPayload[1]) {
-          setConfig({ model2: modelPayload[1] });
-        }
       } catch (exc) {
         const message = exc instanceof Error ? exc.message : String(exc);
-        if (isApiDisabledError(exc)) {
-          setApiDisabledBanner("API read endpoints are currently disabled by feature flags.");
-        } else {
-          pushToast("warning", `Model list unavailable: ${message}`);
-        }
+        pushToast("warning", `Model list unavailable: ${message}`);
       } finally {
         if (active) {
           setLoading(false);
@@ -160,15 +148,19 @@ export default function ConfigurePage() {
     );
   }
 
+  const handleRunBenchmark = () => {
+    if (!canRunBenchmark) {
+      return;
+    }
+    router.push("/run");
+  };
+
   return (
     <div className="grid gap-5">
       <header>
         <h1 className="text-2xl font-semibold">Configure Benchmark</h1>
         <p className="mt-1 text-sm text-muted">Setup only: dataset, mode, model selection, and system prompt.</p>
       </header>
-
-      {apiDisabledBanner ? <StatusBanner tone="warning" title="Reads disabled:" message={apiDisabledBanner} /> : null}
-
       <Card title="Benchmark Setup">
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Dataset">
@@ -226,6 +218,17 @@ export default function ConfigurePage() {
         <div className="mt-4 rounded-ui border border-border bg-slate-50 p-3 text-sm">
           <p className="font-medium">Resolved model set</p>
           <p className="mt-1 text-muted">{activeModels.join(", ") || "No model selected yet."}</p>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            className="focus-ring rounded-ui bg-primary px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!canRunBenchmark}
+            onClick={handleRunBenchmark}
+            data-testid="configure-run-benchmark"
+          >
+            Run Benchmark
+          </button>
         </div>
       </Card>
     </div>

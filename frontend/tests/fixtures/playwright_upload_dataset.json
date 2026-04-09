@@ -1,0 +1,18 @@
+[
+  {
+    "id": "q901",
+    "question": "What is 2 + 2?",
+    "expected_answer": "4",
+    "topic": "Math",
+    "hardness_level": "easy",
+    "why_prepared": "playwright_e2e"
+  },
+  {
+    "id": "q902",
+    "question": "Write the word 'hello' in lowercase.",
+    "expected_answer": "hello",
+    "topic": "Language",
+    "hardness_level": "easy",
+    "why_prepared": "playwright_e2e"
+  }
+]

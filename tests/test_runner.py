@@ -90,6 +90,10 @@ def test_runner_stop_interrupts_all_models(monkeypatch) -> None:
     time.sleep(0.03)
     live_runner.request_stop()
 
+    immediate_snapshot = live_runner.snapshot()
+    assert immediate_snapshot["running"] is False
+    assert immediate_snapshot["completed"] is True
+
     snapshot = wait_until_completed(live_runner)
     entries = snapshot["entries"]  # type: ignore[index]
     assert snapshot["completed"] is True

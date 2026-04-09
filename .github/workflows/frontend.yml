@@ -51,13 +51,21 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies for live E2E
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ../requirements.txt
+
       - name: Install frontend dependencies
         run: npm install
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: Run Playwright smoke tests
-        env:
-          NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      - name: Run Playwright smoke + live backend tests
         run: npm run test:e2e

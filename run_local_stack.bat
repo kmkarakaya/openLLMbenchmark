@@ -9,6 +9,7 @@ set "FRONTEND_DIR=%REPO_ROOT%\frontend"
 set "DEFAULT_BACKEND_PORT=8000"
 set "DEFAULT_FRONTEND_PORT=3001"
 set "MAX_FRONTEND_SCAN=25"
+set "BACKEND_HEALTH_PATH=/health"
 
 set "MODE=%~1"
 if /I "%MODE%"=="backend" goto :backend_mode
@@ -34,23 +35,28 @@ if not exist "%FRONTEND_DIR%\package.json" (
 
 set "BACKEND_ALREADY_RUNNING=0"
 call :is_port_in_use %BACKEND_PORT%
-if "%ERRORLEVEL%"=="0" (
+if errorlevel 1 (
+  echo [INFO] Starting backend API window...
+  start "openLLMbenchmark API" "%ComSpec%" /k call "%~f0" backend %BACKEND_PORT%
+  call :wait_for_backend_healthy %BACKEND_PORT%
+  if errorlevel 1 (
+    echo [WARN] Backend did not become healthy on port %BACKEND_PORT%.
+    echo [WARN] Check backend window logs. Missing deps/env can cause startup failures.
+  )
+) else (
   set "BACKEND_ALREADY_RUNNING=1"
   echo [INFO] Backend port %BACKEND_PORT% is already in use. Reusing existing backend.
-) else (
-  echo [INFO] Starting backend API window...
-  start "openLLMbenchmark API" "%ComSpec%" /k ""%~f0" backend %BACKEND_PORT%"
-  timeout /t 2 /nobreak >nul
-  call :is_port_in_use %BACKEND_PORT%
-  if not "%ERRORLEVEL%"=="0" (
-    echo [WARN] Backend did not open port %BACKEND_PORT% yet. Check the backend window for errors.
+  call :is_backend_healthy %BACKEND_PORT%
+  if errorlevel 1 (
+    echo [WARN] Port %BACKEND_PORT% is listening but %BACKEND_HEALTH_PATH% did not return API health.
+    echo [WARN] If this is not the benchmark API, stop that process or use another backend port.
   )
 )
 
 set /a "SCAN_COUNT=0"
 :find_frontend_port
 call :is_port_in_use %FRONTEND_PORT%
-if "%ERRORLEVEL%"=="0" (
+if not errorlevel 1 (
   set /a "SCAN_COUNT+=1"
   if %SCAN_COUNT% GTR %MAX_FRONTEND_SCAN% (
     echo [ERROR] Could not find a free frontend port after %MAX_FRONTEND_SCAN% attempts.
@@ -62,10 +68,10 @@ if "%ERRORLEVEL%"=="0" (
 )
 
 echo [INFO] Starting frontend UI window...
-start "openLLMbenchmark UI" "%ComSpec%" /k ""%~f0" frontend %BACKEND_PORT% %FRONTEND_PORT%"
+start "openLLMbenchmark UI" "%ComSpec%" /k call "%~f0" frontend %BACKEND_PORT% %FRONTEND_PORT%
 timeout /t 2 /nobreak >nul
 call :is_port_in_use %FRONTEND_PORT%
-if not "%ERRORLEVEL%"=="0" (
+if errorlevel 1 (
   echo [WARN] Frontend did not open port %FRONTEND_PORT% yet. Check the frontend window for errors.
 )
 
@@ -74,6 +80,7 @@ if "%BACKEND_ALREADY_RUNNING%"=="1" (
   echo [OK] Backend: reused existing instance on port %BACKEND_PORT%.
 )
 echo [OK] API docs: http://localhost:%BACKEND_PORT%/docs
+echo [OK] API health: http://localhost:%BACKEND_PORT%%BACKEND_HEALTH_PATH%
 echo [OK] UI:       http://localhost:%FRONTEND_PORT%
 echo.
 echo Optional usage:
@@ -104,7 +111,7 @@ set "BACKEND_PORT=%DEFAULT_BACKEND_PORT%"
 set "FRONTEND_PORT=%DEFAULT_FRONTEND_PORT%"
 if not "%~2"=="" set "BACKEND_PORT=%~2"
 if not "%~3"=="" set "FRONTEND_PORT=%~3"
-set "NEXT_PUBLIC_API_BASE_URL=http://localhost:%BACKEND_PORT%"
+set "NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:%BACKEND_PORT%"
 
 if not exist "%FRONTEND_DIR%\package.json" (
   echo [ERROR] frontend\package.json not found.
@@ -121,16 +128,20 @@ cd /d "%FRONTEND_DIR%"
 
 if not exist "node_modules" (
   echo [INFO] Installing frontend dependencies...
-  npm install
+  if exist "package-lock.json" (
+    call npm ci
+  ) else (
+    call npm install
+  )
   if errorlevel 1 (
-    echo [ERROR] npm install failed.
+    echo [ERROR] Frontend dependency installation failed.
     exit /b 1
   )
 )
 
 echo [INFO] Frontend starting on port %FRONTEND_PORT%...
 echo [INFO] API base URL: %NEXT_PUBLIC_API_BASE_URL%
-npm run dev -- -p %FRONTEND_PORT%
+call npm run dev -- -p %FRONTEND_PORT%
 exit /b %ERRORLEVEL%
 
 :usage
@@ -146,3 +157,20 @@ set "PORT_TO_CHECK=%~1"
 powershell -NoProfile -Command ^
   "$p=%PORT_TO_CHECK%; if (Get-NetTCPConnection -State Listen -LocalPort $p -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }" >nul 2>&1
 exit /b %ERRORLEVEL%
+
+:is_backend_healthy
+set "PORT_TO_CHECK=%~1"
+powershell -NoProfile -Command ^
+  "$url='http://127.0.0.1:%PORT_TO_CHECK%%BACKEND_HEALTH_PATH%'; try { $r=Invoke-RestMethod -Uri $url -TimeoutSec 2; if ($r.status -eq 'ok') { exit 0 } } catch {}; exit 1" >nul 2>&1
+exit /b %ERRORLEVEL%
+
+:wait_for_backend_healthy
+set "PORT_TO_CHECK=%~1"
+set /a "HEALTH_CHECK_COUNT=0"
+:wait_for_backend_healthy_loop
+call :is_backend_healthy %PORT_TO_CHECK%
+if not errorlevel 1 exit /b 0
+set /a "HEALTH_CHECK_COUNT+=1"
+if %HEALTH_CHECK_COUNT% GEQ 20 exit /b 1
+timeout /t 1 /nobreak >nul
+goto :wait_for_backend_healthy_loop

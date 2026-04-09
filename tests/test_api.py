@@ -33,17 +33,15 @@ def test_health_returns_v1_schema_lock() -> None:
     assert response.json() == {"status": "ok", "version": "v1"}
 
 
-def test_read_endpoints_return_404_when_feature_api_reads_disabled(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_READS", "false")
+def test_read_endpoints_are_available() -> None:
     client = TestClient(app)
-    assert client.get("/models").status_code == 404
-    assert client.get("/datasets").status_code == 404
-    assert client.get("/questions", params={"dataset_key": "default_tr"}).status_code == 404
-    assert client.get("/results", params={"dataset_key": "default_tr"}).status_code == 404
+    assert client.get("/models").status_code in {200, 503}
+    assert client.get("/datasets").status_code == 200
+    assert client.get("/questions", params={"dataset_key": "default_tr"}).status_code == 200
+    assert client.get("/results", params={"dataset_key": "default_tr"}).status_code == 200
 
 
 def test_results_endpoint_uses_baseline_compatible_payload_shape(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_READS", "true")
     client = TestClient(app)
     response = client.get("/results", params={"dataset_key": "default_tr"})
     assert response.status_code == 200
@@ -55,7 +53,6 @@ def test_results_endpoint_uses_baseline_compatible_payload_shape(monkeypatch) ->
 
 
 def test_datasets_template_returns_downloadable_json(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_READS", "true")
     client = TestClient(app)
     response = client.get("/datasets/template")
     assert response.status_code == 200
@@ -73,25 +70,8 @@ def test_datasets_template_returns_downloadable_json(monkeypatch) -> None:
     }
 
 
-def test_runs_endpoint_gated_by_feature_flag(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_RUNS", "false")
-    client = TestClient(app)
-    response = client.post(
-        "/runs",
-        json={
-            "session_id": "s1",
-            "dataset_key": "default_tr",
-            "question_id": "q001",
-            "models": ["gemma3:4b"],
-            "system_prompt": "x",
-        },
-    )
-    assert response.status_code == 404
-
-
 def test_runs_endpoint_returns_conflict_when_runner_active(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_RUNS", "true")
-    monkeypatch.setattr("api.start_run", lambda **_: (None, "conflict"))
+    monkeypatch.setattr("api.start_run", lambda **_: (17, "conflict"))
     client = TestClient(app)
     response = client.post(
         "/runs",
@@ -104,20 +84,12 @@ def test_runs_endpoint_returns_conflict_when_runner_active(monkeypatch) -> None:
         },
     )
     assert response.status_code == 409
-
-
-def test_datasets_upload_requires_api_writes(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "false")
-    client = TestClient(app)
-    response = client.post(
-        "/datasets/upload",
-        files={"file": ("demo.json", b'[{"id":"q001","question":"Soru?","expected_answer":"A"}]', "application/json")},
-    )
-    assert response.status_code == 423
+    payload = response.json()
+    assert payload["detail"] == "A run is already active for this session."
+    assert payload["run_id"] == 17
 
 
 def test_datasets_upload_accepts_valid_dataset(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "true")
     default_path = tmp_path / "benchmark.json"
     default_path.write_text(
         json.dumps([{"id": "q001", "question": "Default?", "expected_answer": "A"}], ensure_ascii=False),
@@ -147,14 +119,12 @@ def test_datasets_upload_accepts_valid_dataset(monkeypatch, tmp_path: Path) -> N
 
 
 def test_datasets_delete_blocks_default_dataset(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "true")
     client = TestClient(app)
     response = client.delete("/datasets/default_tr")
     assert response.status_code == 400
 
 
 def test_datasets_delete_removes_uploaded_dataset(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "true")
     data_dir = tmp_path / "data"
     root_dir = tmp_path
     benchmark_path = tmp_path / "benchmark.json"
@@ -188,7 +158,6 @@ def test_datasets_delete_removes_uploaded_dataset(monkeypatch, tmp_path: Path) -
 
 
 def test_start_run_passes_correlation_fields_to_runner(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_RUNS", "true")
     dataset = {
         "default_tr": {
             "key": "default_tr",
@@ -229,7 +198,6 @@ def test_start_run_passes_correlation_fields_to_runner(monkeypatch) -> None:
 
 
 def test_run_status_returns_snapshot_payload(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_RUNS", "true")
     monkeypatch.setattr(
         "api.get_run_status",
         lambda run_id, session_id: {
@@ -264,7 +232,6 @@ def test_run_status_returns_snapshot_payload(monkeypatch) -> None:
 
 
 def test_run_status_enforces_session_isolation(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_RUNS", "true")
     monkeypatch.setattr(
         "api.get_run_status",
         lambda run_id, session_id: (
@@ -291,7 +258,6 @@ def test_run_status_enforces_session_isolation(monkeypatch) -> None:
 
 
 def test_run_events_emit_ordered_lifecycle(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_RUNS", "true")
     first_snapshot = {
         "run_id": 9,
         "running": True,
@@ -354,7 +320,6 @@ def test_run_events_emit_ordered_lifecycle(monkeypatch) -> None:
 
 
 def test_results_export_supports_json_and_xlsx(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_READS", "true")
     client = TestClient(app)
     json_response = client.get("/results/export", params={"dataset_key": "default_tr", "format": "json"})
     xlsx_response = client.get("/results/export", params={"dataset_key": "default_tr", "format": "xlsx"})
@@ -367,7 +332,6 @@ def test_results_export_supports_json_and_xlsx(monkeypatch) -> None:
 
 
 def test_results_table_export_supports_json_and_xlsx(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_READS", "true")
     client = TestClient(app)
     json_response = client.get(
         "/results/table_export",
@@ -394,7 +358,6 @@ def test_results_table_export_supports_json_and_xlsx(monkeypatch) -> None:
 
 
 def test_results_table_export_returns_404_for_unknown_dataset(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_READS", "true")
     client = TestClient(app)
     response = client.get(
         "/results/table_export",
@@ -409,7 +372,6 @@ def test_results_table_export_returns_404_for_unknown_dataset(monkeypatch) -> No
 
 
 def test_results_table_export_rejects_unknown_table(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_READS", "true")
     client = TestClient(app)
     response = client.get(
         "/results/table_export",
@@ -423,15 +385,7 @@ def test_results_table_export_rejects_unknown_table(monkeypatch) -> None:
     assert response.json()["detail"] == "Unknown results table"
 
 
-def test_results_model_delete_endpoint_locked_while_api_writes_disabled(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "false")
-    client = TestClient(app)
-    response = client.delete("/results/model", params={"dataset_key": "default_tr", "model": "gemma3:4b"})
-    assert response.status_code == 423
-
-
 def test_results_model_delete_returns_404_for_unknown_dataset(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "true")
     monkeypatch.setattr(api_service, "_dataset_option_map", lambda: {})
     client = TestClient(app)
     response = client.delete("/results/model", params={"dataset_key": "unknown", "model": "gemma3:4b"})
@@ -440,7 +394,6 @@ def test_results_model_delete_returns_404_for_unknown_dataset(monkeypatch) -> No
 
 
 def test_results_model_delete_returns_404_when_model_not_found(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "true")
     data_dir = tmp_path / "data"
     root_dir = tmp_path
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -487,7 +440,6 @@ def test_results_model_delete_returns_404_when_model_not_found(monkeypatch, tmp_
 
 
 def test_results_model_delete_removes_only_target_model_rows(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "true")
     data_dir = tmp_path / "data"
     root_dir = tmp_path
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -580,15 +532,7 @@ def test_results_model_delete_removes_only_target_model_rows(monkeypatch, tmp_pa
     assert (results_dir / "uploaded-demo.md").exists()
 
 
-def test_manual_results_write_endpoint_locked_while_api_writes_disabled(monkeypatch) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "false")
-    client = TestClient(app)
-    response = client.patch("/results/manual")
-    assert response.status_code == 423
-
-
 def test_manual_results_write_updates_dataset_scoped_record(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "true")
     data_dir = tmp_path / "data"
     root_dir = tmp_path
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -655,7 +599,6 @@ def test_manual_results_write_updates_dataset_scoped_record(monkeypatch, tmp_pat
 
 
 def test_manual_results_write_rejects_invalid_status(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FEATURE_API_WRITES", "true")
     data_dir = tmp_path / "data"
     root_dir = tmp_path
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -724,6 +667,20 @@ def test_ops_slo_returns_schema_for_local_requests() -> None:
     }
 
 
+def test_ops_slo_reset_clears_breached_state_for_local_requests() -> None:
+    monitor = get_slo_monitor()
+    monitor.register_stream_open("stream-a")
+    monitor.register_stream_error("stream-a")
+
+    client = TestClient(app)
+    response = client.post("/ops/slo/reset")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "reset"
+    assert payload["slo"]["breached"] is False
+
+
 def test_ops_slo_rejects_non_local_requests(monkeypatch) -> None:
     monkeypatch.setattr(api, "_is_local_request", lambda request: False)
     client = TestClient(app)
@@ -731,11 +688,17 @@ def test_ops_slo_rejects_non_local_requests(monkeypatch) -> None:
     assert response.status_code == 403
 
 
+def test_ops_slo_reset_rejects_non_local_requests(monkeypatch) -> None:
+    monkeypatch.setattr(api, "_is_local_request", lambda request: False)
+    client = TestClient(app)
+    response = client.post("/ops/slo/reset")
+    assert response.status_code == 403
+
+
 def test_runs_endpoint_returns_503_when_slo_breached(monkeypatch) -> None:
     monitor = get_slo_monitor()
     monitor.register_stream_open("stream-a")
-    monitor.register_stream_disconnect("stream-a")
-    monkeypatch.setenv("FEATURE_API_RUNS", "true")
+    monitor.register_stream_error("stream-a")
     client = TestClient(app)
     response = client.post(
         "/runs",
@@ -754,11 +717,47 @@ def test_runs_endpoint_returns_503_when_slo_breached(monkeypatch) -> None:
 def test_run_events_endpoint_returns_503_when_slo_breached(monkeypatch) -> None:
     monitor = get_slo_monitor()
     monitor.register_stream_open("stream-a")
-    monitor.register_stream_disconnect("stream-a")
-    monkeypatch.setenv("FEATURE_API_RUNS", "true")
+    monitor.register_stream_error("stream-a")
     client = TestClient(app)
     response = client.get("/runs/1/events", params={"session_id": "s1"})
     assert response.status_code == 503
+
+
+def test_interrupted_run_does_not_reduce_run_success_rate() -> None:
+    monitor = get_slo_monitor()
+    api._record_terminal_run_outcome(
+        run_id=101,
+        session_id="s1",
+        completed=True,
+        interrupted=True,
+        error="",
+    )
+
+    snapshot = monitor.snapshot()
+    assert snapshot.run_completion_success_rate == 1.0
+    assert snapshot.breached is False
+
+
+def test_runs_endpoint_not_blocked_by_plain_stream_disconnect(monkeypatch) -> None:
+    monitor = get_slo_monitor()
+    monitor.register_stream_open("stream-a")
+    monitor.register_stream_disconnect("stream-a")
+    monkeypatch.setattr("api.start_run", lambda **_: (23, "started"))
+
+    client = TestClient(app)
+    response = client.post(
+        "/runs",
+        json={
+            "session_id": "s1",
+            "dataset_key": "default_tr",
+            "question_id": "q001",
+            "models": ["gemma3:4b"],
+            "system_prompt": "x",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["run_id"] == 23
 
 
 def test_phase0_baseline_fixtures_exist_and_are_loadable() -> None:
@@ -811,7 +810,6 @@ def test_get_models_preserves_explicit_cloud_suffix_from_local_provider(monkeypa
 
 
 def test_run_status_persists_completed_entries_with_model_source(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FEATURE_API_RUNS", "true")
 
     data_dir = tmp_path / "data"
     root_dir = tmp_path
@@ -882,3 +880,4 @@ def test_run_status_persists_completed_entries_with_model_source(monkeypatch, tm
     assert persisted[0]["model_source"] == "local"
     assert persisted[0]["model_host"] == "http://localhost:11434"
     assert persisted[0]["status"] == "success"
+    assert persisted[0]["generated_tokens"] >= 1

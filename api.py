@@ -28,7 +28,6 @@ from api_service import (
     stop_run,
     upload_dataset,
 )
-from config import get_feature_flags
 from slo_monitor import get_slo_monitor
 
 
@@ -54,8 +53,8 @@ def _raise_if_runs_circuit_open() -> None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                "Runs are temporarily disabled due to SSE SLO breach. "
-                "Set FEATURE_API_RUNS=0, investigate, and recover before re-enabling."
+                "Runs are temporarily unavailable due to SSE SLO breach. "
+                "Investigate and recover before retrying."
             ),
         )
 
@@ -70,6 +69,8 @@ def _record_terminal_run_outcome(
 ) -> None:
     if not completed:
         return
+    if interrupted:
+        return
     success = not interrupted and not str(error).strip()
     run_key = f"{session_id}:{run_id}"
     get_slo_monitor().register_run_outcome(run_key, success=success)
@@ -82,9 +83,6 @@ def health() -> dict[str, str]:
 
 @app.get("/models")
 def models() -> dict[str, list[str]]:
-    flags = get_feature_flags()
-    if not flags.api_reads:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API reads are disabled")
     try:
         return {"models": get_models()}
     except RuntimeError as exc:
@@ -93,17 +91,11 @@ def models() -> dict[str, list[str]]:
 
 @app.get("/datasets")
 def datasets() -> dict[str, list[dict[str, object]]]:
-    flags = get_feature_flags()
-    if not flags.api_reads:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API reads are disabled")
     return {"datasets": get_datasets()}
 
 
 @app.get("/datasets/template")
 def datasets_template() -> Response:
-    flags = get_feature_flags()
-    if not flags.api_reads:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API reads are disabled")
     content = get_dataset_template()
     headers = {"Content-Disposition": 'attachment; filename="benchmark_template.json"'}
     return Response(content=content, media_type="application/json", headers=headers)
@@ -111,12 +103,6 @@ def datasets_template() -> Response:
 
 @app.post("/datasets/upload", status_code=status.HTTP_201_CREATED)
 async def datasets_upload(file: UploadFile = File(...)) -> dict[str, object]:
-    flags = get_feature_flags()
-    if not flags.api_writes:
-        return JSONResponse(
-            status_code=status.HTTP_423_LOCKED,
-            content={"detail": "API writes disabled; Streamlit remains sole writer."},
-        )
     payload = await file.read()
     if not payload:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Uploaded file is empty.")
@@ -131,12 +117,6 @@ async def datasets_upload(file: UploadFile = File(...)) -> dict[str, object]:
 
 @app.delete("/datasets/{dataset_key}")
 def datasets_delete(dataset_key: str) -> dict[str, object]:
-    flags = get_feature_flags()
-    if not flags.api_writes:
-        return JSONResponse(
-            status_code=status.HTTP_423_LOCKED,
-            content={"detail": "API writes disabled; Streamlit remains sole writer."},
-        )
     state, summary = delete_dataset(dataset_key)
     if state == "not_found":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
@@ -147,9 +127,6 @@ def datasets_delete(dataset_key: str) -> dict[str, object]:
 
 @app.get("/questions")
 def questions(dataset_key: str = Query(..., min_length=1)) -> dict[str, object]:
-    flags = get_feature_flags()
-    if not flags.api_reads:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API reads are disabled")
     payload = get_questions(dataset_key)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
@@ -158,9 +135,6 @@ def questions(dataset_key: str = Query(..., min_length=1)) -> dict[str, object]:
 
 @app.get("/results")
 def results(dataset_key: str = Query(..., min_length=1)) -> dict[str, object]:
-    flags = get_feature_flags()
-    if not flags.api_reads:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API reads are disabled")
     payload = get_results(dataset_key)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
@@ -172,9 +146,6 @@ def results_export(
     dataset_key: str = Query(..., min_length=1),
     export_format: str = Query(..., alias="format", pattern="^(json|xlsx)$"),
 ) -> Response:
-    flags = get_feature_flags()
-    if not flags.api_reads:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API reads are disabled")
     exported = export_results(dataset_key, export_format)
     if exported is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
@@ -189,9 +160,6 @@ def results_table_export(
     table: str = Query(..., min_length=1),
     export_format: str = Query(..., alias="format", pattern="^(json|xlsx)$"),
 ) -> Response:
-    flags = get_feature_flags()
-    if not flags.api_reads:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API reads are disabled")
     state, exported = export_results_table(dataset_key=dataset_key, table_key=table, export_format=export_format)
     if state == "dataset_not_found":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
@@ -211,12 +179,6 @@ def results_model_delete(
     dataset_key: str = Query(..., min_length=1),
     model: str = Query(..., min_length=1),
 ) -> dict[str, object]:
-    flags = get_feature_flags()
-    if not flags.api_writes:
-        return JSONResponse(
-            status_code=status.HTTP_423_LOCKED,
-            content={"detail": "API writes disabled; Streamlit remains sole writer."},
-        )
     state, summary = delete_model_results(dataset_key=dataset_key, model=model)
     if state == "dataset_not_found":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown dataset")
@@ -231,9 +193,6 @@ def results_model_delete(
 
 @app.post("/runs", status_code=status.HTTP_201_CREATED)
 async def runs(request: Request) -> dict[str, object]:
-    flags = get_feature_flags()
-    if not flags.api_runs:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API runs are disabled")
     _raise_if_runs_circuit_open()
 
     body = await request.json()
@@ -257,7 +216,10 @@ async def runs(request: Request) -> dict[str, object]:
     if status_text == "invalid_models":
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=status_text)
     if status_text == "conflict":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=status_text)
+        payload: dict[str, object] = {"detail": "A run is already active for this session."}
+        if run_id is not None:
+            payload["run_id"] = run_id
+        return JSONResponse(status_code=status.HTTP_409_CONFLICT, content=payload)
     if status_text != "started" or run_id is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=status_text)
     return {"run_id": run_id, "status": "started", "session_id": session_id}
@@ -269,9 +231,6 @@ async def run_events(
     run_id: int,
     session_id: str = Query(..., min_length=1),
 ) -> EventSourceResponse:
-    flags = get_feature_flags()
-    if not flags.api_runs:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API runs are disabled")
     _raise_if_runs_circuit_open()
     monitor = get_slo_monitor()
     stream_key = f"{session_id}:{run_id}:{uuid.uuid4().hex}"
@@ -282,14 +241,19 @@ async def run_events(
         emitted_completed_for: set[str] = set()
         try:
             while True:
-                if await request.is_disconnected():
-                    monitor.register_stream_disconnect(stream_key)
-                    break
-
                 snapshot = run_snapshot(session_id=session_id)
                 if int(snapshot.get("run_id", 0)) != run_id:
                     monitor.register_stream_error(stream_key)
                     yield {"event": "run_error", "data": json.dumps({"reason": "run_not_found"})}
+                    break
+
+                running = bool(snapshot.get("running"))
+                completed = bool(snapshot.get("completed"))
+                if await request.is_disconnected():
+                    if running and not completed:
+                        monitor.register_stream_disconnect(stream_key)
+                    else:
+                        monitor.register_stream_closed(stream_key)
                     break
 
                 if not emitted_started:
@@ -328,8 +292,6 @@ async def run_events(
                         }
                         yield {"event": event_name, "data": json.dumps(payload)}
 
-                running = bool(snapshot.get("running"))
-                completed = bool(snapshot.get("completed"))
                 interrupted = any(bool(item.get("interrupted")) for item in entries)
                 error = next((str(item.get("error", "")) for item in entries if str(item.get("error", "")).strip()), "")
                 if completed and not running:
@@ -354,9 +316,6 @@ async def run_events(
 
 @app.get("/runs/{run_id}/status")
 def run_status(run_id: int, session_id: str = Query(..., min_length=1)) -> dict[str, object]:
-    flags = get_feature_flags()
-    if not flags.api_runs:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API runs are disabled")
     payload = get_run_status(run_id=run_id, session_id=session_id)
     if payload is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
@@ -372,9 +331,6 @@ def run_status(run_id: int, session_id: str = Query(..., min_length=1)) -> dict[
 
 @app.post("/runs/{run_id}/stop", status_code=status.HTTP_202_ACCEPTED)
 def run_stop(run_id: int, session_id: str = Query(..., min_length=1)) -> dict[str, str]:
-    flags = get_feature_flags()
-    if not flags.api_runs:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API runs are disabled")
     del run_id
     stop_run(session_id=session_id)
     return {"status": "stop_requested"}
@@ -387,14 +343,17 @@ def ops_slo(request: Request) -> dict[str, object]:
     return get_slo_monitor().snapshot().as_dict()
 
 
+@app.post("/ops/slo/reset")
+def ops_slo_reset(request: Request) -> dict[str, object]:
+    if not _is_local_request(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Local/internal endpoint only.")
+    monitor = get_slo_monitor()
+    monitor.reset()
+    return {"status": "reset", "slo": monitor.snapshot().as_dict()}
+
+
 @app.patch("/results/manual")
 async def results_manual(request: Request):
-    flags = get_feature_flags()
-    if not flags.api_writes:
-        return JSONResponse(
-            status_code=status.HTTP_423_LOCKED,
-            content={"detail": "API writes disabled; Streamlit remains sole writer."},
-        )
     body = await request.json()
     dataset_key = str(body.get("dataset_key", "")).strip()
     question_id = str(body.get("question_id", "")).strip()

@@ -1,18 +1,12 @@
-# Checkpoint 2 - Frontend MVP Integrated with API
+# Checkpoint 2 - Frontend as Primary UI
 
-## Implemented
+## Completed
 
-- Added `frontend/` Next.js + TypeScript + Tailwind project.
-- Implemented core UI flows:
-  - Configure benchmark (dataset/mode/models/system prompt)
-  - Run controls (start/stop) with SSE + reconnect-safe polling
-  - Results rendering (metrics/matrix/raw payload)
-  - Dataset management (template/upload/delete)
-  - Export links (JSON/XLSX)
-- Added typed API client for FastAPI endpoints.
+- Next.js UI is the only active frontend.
+- API client defaults to `/api` for single-URL deployments.
+- Configure/Run/Results/Datasets flows remain fully wired to FastAPI.
 
 ## Verification
 
-- Frontend typecheck and build scripts configured.
-- Playwright smoke test validates route stubs and core page visibility.
-
+- Frontend typecheck/build pass.
+- Playwright smoke coverage remains green.

@@ -16,7 +16,6 @@ import {
   getDatasets,
   getQuestions,
   getResults,
-  isApiDisabledError,
   tableExportLink
 } from "../../lib/api";
 import { useAppState } from "../../lib/app-state";
@@ -72,7 +71,6 @@ export default function ResultsPage() {
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [results, setResults] = useState<ResultsResponse | null>(null);
   const [questions, setQuestions] = useState<BenchmarkQuestion[]>([]);
-  const [readsDisabled, setReadsDisabled] = useState(false);
   const [modelToDelete, setModelToDelete] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deletingModel, setDeletingModel] = useState(false);
@@ -138,7 +136,6 @@ export default function ResultsPage() {
     const load = async () => {
       setLoading(true);
       setError("");
-      setReadsDisabled(false);
       try {
         const datasetsPayload = await getDatasets();
         if (!active) {
@@ -162,12 +159,8 @@ export default function ResultsPage() {
         setQuestions(questionPayload.questions);
       } catch (exc) {
         const message = exc instanceof Error ? exc.message : String(exc);
-        if (isApiDisabledError(exc)) {
-          setReadsDisabled(true);
-        } else {
-          setError(message);
-          pushToast("danger", message);
-        }
+        setError(message);
+        pushToast("danger", message);
       } finally {
         if (active) {
           setLoading(false);
@@ -369,18 +362,6 @@ export default function ResultsPage() {
     );
   }
 
-  if (readsDisabled) {
-    return (
-      <div className="grid gap-5">
-        <header>
-          <h1 className="text-2xl font-semibold">Results</h1>
-          <p className="mt-1 text-sm text-muted">Metrics, question matrix, and detailed model outputs.</p>
-        </header>
-        <ErrorState title="Read endpoints disabled" message="FEATURE_API_READS is disabled, so results cannot be loaded." />
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="grid gap-5">
@@ -415,7 +396,11 @@ export default function ResultsPage() {
       <section className="grid items-stretch gap-4 lg:grid-cols-2">
         <Card title="Select Dataset" className="h-full">
           <Field label="Dataset">
-            <Select value={config.datasetKey} onChange={(event) => void onDatasetChange(event.target.value)}>
+            <Select
+              value={config.datasetKey}
+              onChange={(event) => void onDatasetChange(event.target.value)}
+              data-testid="results-dataset-select"
+            >
               {datasets.map((item) => (
                 <option key={item.key} value={item.key}>
                   {item.label} ({item.question_count})
@@ -432,6 +417,7 @@ export default function ResultsPage() {
               <a
                 className="focus-ring inline-flex items-center gap-2 rounded-ui border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-primary/40 hover:bg-primary/5"
                 href={exportLink(config.datasetKey, "json")}
+                data-testid="results-export-raw-json"
                 onClick={(event) => {
                   event.preventDefault();
                   onExportClick("json");
@@ -447,6 +433,7 @@ export default function ResultsPage() {
               <a
                 className="focus-ring inline-flex items-center gap-2 rounded-ui border border-border bg-white px-3 py-2 text-sm font-semibold hover:border-primary/40 hover:bg-primary/5"
                 href={exportLink(config.datasetKey, "xlsx")}
+                data-testid="results-export-raw-xlsx"
                 onClick={(event) => {
                   event.preventDefault();
                   onExportClick("xlsx");

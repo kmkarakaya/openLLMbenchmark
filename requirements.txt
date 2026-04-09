@@ -1,4 +1,3 @@
-streamlit>=1.41
 ollama>=0.4.7
 rapidfuzz>=3.10.0
 pandas>=2.2.0

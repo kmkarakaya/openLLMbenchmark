@@ -124,8 +124,7 @@ class SloMonitor:
         with self._lock:
             self._prune(now)
             opened = len(self._connection_opened)
-            errored_or_disconnected = len(self._connection_errors) + len(self._connection_disconnects)
-            disconnect_error_rate = (errored_or_disconnected / opened) if opened else 0.0
+            disconnect_error_rate = (len(self._connection_errors) / opened) if opened else 0.0
 
             outcomes = [ok for _, ok in self._run_outcomes]
             run_success_rate = (sum(1 for ok in outcomes if ok) / len(outcomes)) if outcomes else 1.0

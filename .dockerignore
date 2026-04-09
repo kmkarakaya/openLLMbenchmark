@@ -13,3 +13,8 @@ tests/
 .venv/
 venv/
 env/
+frontend/node_modules/
+frontend/.next/
+frontend/tests/
+frontend/playwright-report/
+frontend/test-results/

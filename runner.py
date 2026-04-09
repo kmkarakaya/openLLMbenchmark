@@ -125,7 +125,25 @@ class LiveRunner:
         return True
 
     def request_stop(self) -> None:
-        self.state.stop_event.set()
+        with self.state.lock:
+            self.state.stop_event.set()
+            if not self.state.entries:
+                self.state.running = False
+                self.state.completed = False
+                return
+
+            end_time = time.perf_counter()
+            for entry in self.state.entries.values():
+                if entry.running and not entry.completed:
+                    entry.running = False
+                    entry.completed = True
+                    entry.interrupted = True
+                    entry.event = "run_interrupted"
+                    entry.ended_at = end_time
+
+            entries = list(self.state.entries.values())
+            self.state.running = any(item.running for item in entries)
+            self.state.completed = bool(entries) and all(item.completed for item in entries)
 
     def _run_worker(self, run_id: int, target: dict[str, str], prompt: str, system_prompt: str) -> None:
         model_ref = target["ref"]
@@ -162,12 +180,13 @@ class LiveRunner:
                 return
             entry.response = "".join(chunks)
             entry.error = error
-            entry.interrupted = interrupted
+            previously_interrupted = entry.interrupted
+            entry.interrupted = interrupted or previously_interrupted
             entry.running = False
             entry.completed = True
             if error:
                 entry.event = "run_error"
-            elif interrupted:
+            elif entry.interrupted:
                 entry.event = "run_interrupted"
             else:
                 entry.event = "entry_completed"

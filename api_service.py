@@ -9,7 +9,6 @@ import uuid
 
 import portalocker
 
-from config import get_feature_flags
 from data.benchmark import load_benchmark_payload
 from data.dataset_config import (
     DEFAULT_DATASET_KEY,
@@ -118,6 +117,15 @@ def _verdict_for_entry(entry: dict[str, Any], expected_answer: str) -> dict[str,
     return evaluate_response(expected_answer=expected_answer, response=str(entry.get("response", "") or ""))
 
 
+def _estimate_generated_tokens(response_text: str) -> int:
+    trimmed = response_text.strip()
+    if not trimmed:
+        return 0
+    chars = len(trimmed)
+    words = len([part for part in trimmed.split() if part])
+    return max(words, round(chars / 4))
+
+
 def _persist_completed_run_entries(snapshot: dict[str, Any]) -> None:
     run_id = int(snapshot.get("run_id", 0) or 0)
     if run_id <= 0:
@@ -164,6 +172,7 @@ def _persist_completed_run_entries(snapshot: dict[str, Any]) -> None:
             model_name, source = split_model_ref(model_ref)
             host = str(entry.get("host", "") or "").strip() or resolve_model_host(source)
             verdict = _verdict_for_entry(entry, expected_answer)
+            response_text = str(entry.get("response", "") or "")
 
             record = {
                 "dataset_key": dataset_key,
@@ -174,10 +183,11 @@ def _persist_completed_run_entries(snapshot: dict[str, Any]) -> None:
                 "model_name": model_name,
                 "model_source": source,
                 "model_host": host,
-                "response": str(entry.get("response", "") or ""),
+                "response": response_text,
                 "status": verdict["status"],
                 "score": verdict["score"],
                 "response_time_ms": round(float(entry.get("elapsed_ms", 0.0) or 0.0), 2),
+                "generated_tokens": _estimate_generated_tokens(response_text),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "interrupted": bool(entry.get("interrupted")),
                 "auto_scored": bool(verdict.get("auto_scored")),
@@ -517,9 +527,6 @@ def apply_manual_result_override(
 
 
 def start_run(*, session_id: str, dataset_key: str, question_id: str, models: list[str], system_prompt: str) -> tuple[int | None, str]:
-    flags = get_feature_flags()
-    if not flags.api_runs:
-        return None, "disabled"
     dataset = _dataset_option_map().get(dataset_key)
     if dataset is None:
         return None, "dataset_not_found"
@@ -540,7 +547,9 @@ def start_run(*, session_id: str, dataset_key: str, question_id: str, models: li
         trace_id=uuid.uuid4().hex,
     )
     if not started:
-        return None, "conflict"
+        snapshot = runner.snapshot()
+        conflict_run_id = int(snapshot.get("run_id", 0)) or None
+        return conflict_run_id, "conflict"
     snapshot = runner.snapshot()
     return int(snapshot.get("run_id", 0)), "started"
 

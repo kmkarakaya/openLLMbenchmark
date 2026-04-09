@@ -10,9 +10,8 @@ import { ErrorState } from "../../components/error-state";
 import { Field } from "../../components/field";
 import { LoadingSkeleton } from "../../components/loading-skeleton";
 import { Select } from "../../components/select";
-import { StatusBanner } from "../../components/status-banner";
 import { useToast } from "../../components/toast-host";
-import { ApiError, datasetTemplateUrl, deleteDataset, getDatasets, uploadDataset } from "../../lib/api";
+import { datasetTemplateUrl, deleteDataset, getDatasets, uploadDataset } from "../../lib/api";
 import type { DatasetOption } from "../../lib/types";
 
 export default function DatasetsPage() {
@@ -22,7 +21,6 @@ export default function DatasetsPage() {
   const [datasets, setDatasets] = useState<DatasetOption[]>([]);
   const [selected, setSelected] = useState<string>("default_tr");
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [writeLockBanner, setWriteLockBanner] = useState("");
 
   const selectedDataset = useMemo(() => datasets.find((item) => item.key === selected) ?? null, [datasets, selected]);
   const deleteDisabled = !selectedDataset || selectedDataset.is_default;
@@ -68,17 +66,12 @@ export default function DatasetsPage() {
     if (!file) {
       return;
     }
-    setWriteLockBanner("");
     try {
       await uploadDataset(file);
       pushToast("success", `Dataset uploaded: ${file.name}`);
       await loadDatasets();
     } catch (exc) {
-      if (exc instanceof ApiError && exc.status === 423) {
-        setWriteLockBanner(exc.message);
-      } else {
-        pushToast("danger", exc instanceof Error ? exc.message : String(exc));
-      }
+      pushToast("danger", exc instanceof Error ? exc.message : String(exc));
     } finally {
       event.target.value = "";
     }
@@ -88,18 +81,13 @@ export default function DatasetsPage() {
     if (!selectedDataset || selectedDataset.is_default) {
       return;
     }
-    setWriteLockBanner("");
     try {
       await deleteDataset(selectedDataset.key);
       pushToast("success", `Dataset deleted: ${selectedDataset.label}`);
       setConfirmOpen(false);
       await loadDatasets();
     } catch (exc) {
-      if (exc instanceof ApiError && exc.status === 423) {
-        setWriteLockBanner(exc.message);
-      } else {
-        pushToast("danger", exc instanceof Error ? exc.message : String(exc));
-      }
+      pushToast("danger", exc instanceof Error ? exc.message : String(exc));
     }
   };
 
@@ -148,13 +136,11 @@ export default function DatasetsPage() {
         <p className="mt-1 text-sm text-muted">Upload, select, and delete datasets. Export is available from Results.</p>
       </header>
 
-      {writeLockBanner ? <StatusBanner tone="warning" title="Write lock:" message={writeLockBanner} /> : null}
-
       <section className="grid gap-4 lg:grid-cols-2">
         <Card title="Dataset Actions">
           <div className="grid gap-3">
             <Field label="Active Dataset">
-              <Select value={selected} onChange={(event) => setSelected(event.target.value)}>
+              <Select value={selected} onChange={(event) => setSelected(event.target.value)} data-testid="datasets-active-select">
                 {datasets.map((item) => (
                   <option key={item.key} value={item.key}>
                     {item.label} ({item.question_count})
@@ -165,7 +151,7 @@ export default function DatasetsPage() {
 
             <label className="focus-ring inline-flex w-fit cursor-pointer items-center rounded-ui border border-border bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50">
               Upload Dataset JSON
-              <input type="file" className="hidden" accept=".json,application/json" onChange={handleUpload} />
+              <input type="file" className="hidden" accept=".json,application/json" onChange={handleUpload} data-testid="datasets-upload-input" />
             </label>
 
             <div className="flex flex-wrap gap-2">

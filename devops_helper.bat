@@ -11,6 +11,7 @@ set "TMP_DIR="
 
 if "%ACTION%"=="" goto :usage
 if /I "%ACTION%"=="help" goto :usage
+if /I "%ACTION%"=="check" goto :run_check
 if /I "%ACTION%"=="github" goto :run_github
 if /I "%ACTION%"=="hf" goto :run_hf
 if /I "%ACTION%"=="all" goto :run_all
@@ -20,11 +21,13 @@ goto :usage_error
 
 :usage
 echo Usage:
+echo   .\devops_helper.bat check
 echo   .\devops_helper.bat github "commit message"
 echo   .\devops_helper.bat hf
 echo   .\devops_helper.bat all "commit message"
 echo.
 echo Actions:
+echo   check   Runs local preflight checks ^(pytest + frontend typecheck/build + optional docker build^).
 echo   github  Stages all changes, commits, and pushes to origin/current-branch.
 echo   hf      Deploys current HEAD to Hugging Face Space (binary-safe snapshot).
 echo   all     Runs github first, then hf.
@@ -71,6 +74,69 @@ if errorlevel 1 (
 )
 exit /b 0
 
+:run_check
+call :ensure_repo || exit /b 1
+
+if not exist "frontend\package.json" (
+  echo [ERROR] frontend\package.json not found.
+  exit /b 1
+)
+
+echo [INFO] Running backend tests...
+pytest -q || (
+  echo [ERROR] Backend tests failed.
+  exit /b 1
+)
+
+pushd frontend || (
+  echo [ERROR] Could not enter frontend directory.
+  exit /b 1
+)
+
+if not exist "node_modules" (
+  echo [INFO] Installing frontend dependencies...
+  if exist "package-lock.json" (
+    call npm ci
+  ) else (
+    call npm install
+  )
+  if errorlevel 1 (
+    echo [ERROR] Frontend dependency installation failed.
+    popd
+    exit /b 1
+  )
+)
+
+echo [INFO] Running frontend typecheck...
+call npm run typecheck || (
+  echo [ERROR] Frontend typecheck failed.
+  popd
+  exit /b 1
+)
+
+echo [INFO] Running frontend build...
+call npm run build || (
+  echo [ERROR] Frontend build failed.
+  popd
+  exit /b 1
+)
+
+popd
+
+where docker >nul 2>&1
+if errorlevel 1 (
+  echo [WARN] Docker is not available on PATH. Skipping Docker build smoke.
+) else (
+  echo [INFO] Running Docker build smoke...
+  docker build -t openllmbenchmark:preflight . || (
+    echo [ERROR] Docker build failed.
+    exit /b 1
+  )
+)
+
+echo [OK] Preflight checks completed.
+exit /b 0
+
 :run_github
 call :ensure_repo || exit /b 1
 call :get_current_branch || exit /b 1
@@ -104,6 +170,18 @@ for /f "delims=" %%I in ('git rev-parse HEAD') do set "SOURCE_SHA=%%I"
 
 if not exist "README.md" (
   echo [ERROR] README.md not found at repo root.
+  exit /b 1
+)
+if not exist "Dockerfile" (
+  echo [ERROR] Dockerfile not found at repo root.
+  exit /b 1
+)
+if not exist "docker\start.sh" (
+  echo [ERROR] docker\start.sh not found.
+  exit /b 1
+)
+if not exist "docker\nginx.conf" (
+  echo [ERROR] docker\nginx.conf not found.
   exit /b 1
 )
 

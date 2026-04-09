@@ -1,15 +1,12 @@
-# Checkpoint 1 - Backend Hardening and SLO Controls
+# Checkpoint 1 - Streamlit Shutdown Complete
 
-## Implemented
+## Completed
 
-- Added rolling-window SSE SLO monitor with breach evaluation.
-- Added run-circuit behavior for `/runs` and `/runs/{run_id}/events` when SLO is breached.
-- Added local/internal ops endpoint: `GET /ops/slo`.
-- Added inter-process persistence locking and retained atomic write behavior.
-- Added single-writer enforcement hooks for Streamlit read/observe mode when `FEATURE_API_WRITES=true`.
+- Streamlit runtime removed from product path.
+- Backend endpoints run always-on without migration feature toggles.
+- Persistence controls (locking, atomic writes, corrupt-file handling) preserved.
 
 ## Verification
 
-- Backend test suite passes with SLO, conflict, session isolation, and run lifecycle coverage.
-- API contracts remain backward-compatible for existing consumers.
-
+- Backend tests pass for contracts, SSE flow, and artifact behaviors.
+- No active backend code path depends on Streamlit.

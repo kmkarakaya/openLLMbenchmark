@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import { ApiError, getHealth, getSloStatus } from "../lib/api";
+import { ApiError, getHealth, getSloStatus, resetSloStatus } from "../lib/api";
 import { StatusBanner } from "./status-banner";
 
 const NAV_ITEMS = [
@@ -22,6 +22,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
   const [healthLabel, setHealthLabel] = useState("checking");
   const [sloLabel, setSloLabel] = useState("checking");
+  const [resettingSlo, setResettingSlo] = useState(false);
   const [banner, setBanner] = useState<{ tone: "info" | "warning" | "danger" | "success"; title: string; message: string } | null>(null);
 
   useEffect(() => {
@@ -70,6 +71,38 @@ export function AppShell({ children }: { children: ReactNode }) {
       window.clearInterval(interval);
     };
   }, []);
+
+  const refreshSystemStatus = async () => {
+    const [health, slo] = await Promise.all([getHealth(), getSloStatus()]);
+    setHealthLabel(`${health.status} (${health.version})`);
+    setSloLabel(slo.breached ? "breached" : "ok");
+    if (slo.breached) {
+      setBanner({
+        tone: "warning",
+        title: "SLO breach:",
+        message: "Run operations may be throttled or disabled until the system stabilizes."
+      });
+    } else {
+      setBanner(null);
+    }
+  };
+
+  const handleResetSlo = async () => {
+    setResettingSlo(true);
+    try {
+      await resetSloStatus();
+      await refreshSystemStatus();
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "SLO reset failed";
+      setBanner({
+        tone: "danger",
+        title: "SLO reset failed:",
+        message
+      });
+    } finally {
+      setResettingSlo(false);
+    }
+  };
 
   return (
     <div className="min-h-screen">
@@ -146,6 +179,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <p className="font-log">NEXT_PUBLIC_API_BASE_URL</p>
               </div>
             </div>
+            {sloLabel === "breached" ? (
+              <div className="px-4 pb-3 md:px-6">
+                <button
+                  type="button"
+                  className="focus-ring rounded-ui border border-border bg-white px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => void handleResetSlo()}
+                  disabled={resettingSlo}
+                >
+                  {resettingSlo ? "Resetting SLO..." : "Reset SLO"}
+                </button>
+              </div>
+            ) : null}
             {banner ? (
               <div className="px-4 pb-3 md:px-6">
                 <StatusBanner tone={banner.tone} title={banner.title} message={banner.message} />
